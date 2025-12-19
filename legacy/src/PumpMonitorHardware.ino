@@ -1,5 +1,6 @@
 
 #include <ETH.h>
+#include <WiFiClientSecure.h>
 #include "ModbusMaster.h" //https://github.com/4-20ma/ModbusMaster
 #include <PubSubClient.h>
 #include "ArduinoJson.h"
@@ -63,8 +64,8 @@
 //*********** MQTT CONFIGS **************
 //***************************************
 
-char mqtt_server[30] = "34.125.103.226";
-int mqtt_port = 1883;
+char mqtt_server[30] = "mqtt.agrotecsa.com.mx";
+int mqtt_port = 8883;
 char mqtt_user[30] = "PM_New";
 char mqtt_pass[30] = "AgroTECSA321";
 
@@ -113,12 +114,36 @@ ModbusIP mb;  //ModbusIP object
 //***********  GLOBALS   ***************
 //**************************************
 // bool serialMode = 0;
-WiFiClient espClient;
+WiFiClientSecure espClient;
 PubSubClient client(espClient);
 WebServer server(80);
 RTC_DS3231 rtc;
 ModbusMaster modbus;
 TaskHandle_t Monitor_Task;
+
+// Certificado raíz del broker MQTT (EMQ RootCA)
+const char* root_ca = \
+"-----BEGIN CERTIFICATE-----\n" \
+"MIIDUTCCAjmgAwIBAgIJAPPYCjTmxdt/MA0GCSqGSIb3DQEBCwUAMD8xCzAJBgNV\n" \
+"BAYTAkNOMREwDwYDVQQIDAhoYW5nemhvdTEMMAoGA1UECgwDRU1RMQ8wDQYDVQQD\n" \
+"DAZSb290Q0EwHhcNMjAwNTA4MDgwNjUyWhcNMzAwNTA2MDgwNjUyWjA/MQswCQYD\n" \
+"VQQGEwJDTjERMA8GA1UECAwIaGFuZ3pob3UxDDAKBgNVBAoMA0VNUTEPMA0GA1UE\n" \
+"AwwGUm9vdENBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzcgVLex1\n" \
+"EZ9ON64EX8v+wcSjzOZpiEOsAOuSXOEN3wb8FKUxCdsGrsJYB7a5VM/Jot25Mod2\n" \
+"juS3OBMg6r85k2TWjdxUoUs+HiUB/pP/ARaaW6VntpAEokpij/przWMPgJnBF3Ur\n" \
+"MjtbLayH9hGmpQrI5c2vmHQ2reRZnSFbY+2b8SXZ+3lZZgz9+BaQYWdQWfaUWEHZ\n" \
+"uDaNiViVO0OT8DRjCuiDp3yYDj3iLWbTA/gDL6Tf5XuHuEwcOQUrd+h0hyIphO8D\n" \
+"tsrsHZ14j4AWYLk1CPA6pq1HIUvEl2rANx2lVUNv+nt64K/Mr3RnVQd9s8bK+TXQ\n" \
+"KGHd2Lv/PALYuwIDAQABo1AwTjAdBgNVHQ4EFgQUGBmW+iDzxctWAWxmhgdlE8Pj\n" \
+"EbQwHwYDVR0jBBgwFoAUGBmW+iDzxctWAWxmhgdlE8PjEbQwDAYDVR0TBAUwAwEB\n" \
+"/zANBgkqhkiG9w0BAQsFAAOCAQEAGbhRUjpIred4cFAFJ7bbYD9hKu/yzWPWkMRa\n" \
+"ErlCKHmuYsYk+5d16JQhJaFy6MGXfLgo3KV2itl0d+OWNH0U9ULXcglTxy6+njo5\n" \
+"CFqdUBPwN1jxhzo9yteDMKF4+AHIxbvCAJa17qcwUKR5MKNvv09C6pvQDJLzid7y\n" \
+"E2dkgSuggik3oa0427KvctFf8uhOV94RvEDyqvT5+pgNYZ2Yfga9pD/jjpoHEUlo\n" \
+"88IGU8/wJCx3Ds2yc8+oBg/ynxG8f/HmCC1ET6EHHoe2jlo8FpU/SgGtghS1YL30\n" \
+"IWxNsPrUP+XsZpBJy/mvOhE5QXo6Y35zDqqj8tI7AGmAWu22jg==\n" \
+"-----END CERTIFICATE-----\n";
+
 enum armonics {V1, V2, V3, I1, I2, I3};
 enum rates {R1, R2, R3, RT};
 enum eventTypes {zero, localON, localOFF, remoteON, remoteOFF, alarm1, alarm2, overload, alarmIP};
@@ -221,29 +246,6 @@ int dayResetRates = 1;
 int hourResetRates = 0;
 int minResetRates = 0;
 bool isMonthlyResetRates = true;
-
-const char* root_ca= \
-"-----BEGIN CERTIFICATE-----\n" \
-"MIIDWDCCAkCgAwIBAgIIIHkV91TWasEwDQYJKoZIhvcNAQELBQAwVzFVMFMGA1UE\n" \
-"AwxMS2V5b3RpIENvbnZleW9yIFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5IDIg\n" \
-"LSBGb3IgZGV2ZWxvcG1lbnQgdGVzdGluZyBvbmx5ITAeFw0yMTA5MDYwMjE5MTRa\n" \
-"Fw0yNDAxMDkwMjE5MTRaMFcxVTBTBgNVBAMMTEtleW90aSBDb252ZXlvciBSb290\n" \
-"IENlcnRpZmljYXRlIEF1dGhvcml0eSAyIC0gRm9yIGRldmVsb3BtZW50IHRlc3Rp\n" \
-"bmcgb25seSEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDUQnZDYQNe\n" \
-"To8VcvYDZZH7reb+EhxCuAfhLiBrTbUwW89mwrMXVoS/ci4S/gKiVNEFz8HjmQYr\n" \
-"X44l1iFg8zoeU+Y2FKB8gXi3e9Fu9FqF117GwWS2UPPWbImKC0YMZRAEnKHDC4xZ\n" \
-"zDJeEtGq8N772in6wnggUUnHZ8WIpw/WH2ZJ02tE3fahED4a5wziYkgyQE7UDDTt\n" \
-"9k0j6MmMWXxgqWlILnrbhjNRxkA2cw5dCFl/E6h5JeNO7ZLEePWfgn5nNTYb0hw/\n" \
-"mwJNjnbXpjuEZtQq9nsTesUZIvaSpPra7+IthMMs8vZe09bdeaEVICGORFCLujHi\n" \
-"rvb7wPjC3MfHAgMBAAGjKDAmMBMGA1UdJQQMMAoGCCsGAQUFBwMBMA8GA1UdEwEB\n" \
-"/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAFyDLMks53Exfs3cDtR+E9l8RRkG\n" \
-"lCVYZvpMjfo4juMYiI+rHwzAxaxmGxvoOGyYaiSMQlg1Zk7B2HqmzojHAANYxx+n\n" \
-"rZUjlqMHXJVIy3tCJepVnfgtlLFuGu/DgPzRxYW/6V2f49RufhT5DkMSCXUV5VTy\n" \
-"i4xSHfnu12/qM06xXn/w7B6F1+ntwHnSqutNR1aQfWILnKMffUsRM1f3s7CmGie8\n" \
-"VAlWnqltCh+SlX0s4b+cW1ycL4XN2kXJASCCDZrDBrarvjpPZp9bc2mQev+fseCY\n" \
-"oZKXwDVWaMr3i6ySs6PJPsLDfhzuks/GYQMKvS7ucVDyo9c3z+z89wmtRzc=\n" \
-"-----END CERTIFICATE-----\n";
-
 
 //*******************************
 //***       WIFI EVENT        ***
@@ -858,6 +860,11 @@ void setup()
 //setup_WiFiConnection();
 
   server.begin();
+  // Configurar cliente SSL/TLS
+  // Usar setInsecure() para certificados auto-firmados y reducir uso de memoria
+  espClient.setInsecure(); 
+  // Si quieres validar el certificado (usa más RAM): espClient.setCACert(root_ca);
+  
   client.setServer(mqtt_server, mqtt_port);
   client.setCallback(callback);
   // pinMode(MAX485_RE_NEG, OUTPUT);
@@ -874,7 +881,8 @@ void setup()
   setup_Webserver();
   // start task of loop monitor analizer
   if (deviceRegistered == 'y') {
-    xTaskCreatePinnedToCore(loop_Monitor, "Monitor_Task", 110000, NULL, 1, &Monitor_Task, 0);
+    // Reducido de 110000 a 80000 para liberar memoria para SSL/TLS
+    xTaskCreatePinnedToCore(loop_Monitor, "Monitor_Task", 80000, NULL, 1, &Monitor_Task, 0);
     setup_ModbusIP();
   } else {
     Serial.println("DEVICE NOT REGISTERED");
@@ -1635,6 +1643,9 @@ bool getResultMsg(ModbusMaster *node, uint8_t result)
 void reconnect() {
 
 	while (!client.connected() && eth_connected) {
+		// Liberar memoria antes de conectar SSL
+		Serial.print("Free heap: ");
+		Serial.println(ESP.getFreeHeap());
 		Serial.print("Trying to connect Mqtt...");
 		// Creamos un cliente ID
 		String clientId = deviceName;
@@ -1693,7 +1704,7 @@ void reconnect() {
 		} else {
       // try to connect x times or setting default broker
       if (MqttConnTry == 0 ) {
-        client.setServer("34.125.103.226", 1883);
+        client.setServer("mqtt.agrotecsa.com.mx", 8883);
       } else 
       {
         MqttConnTry--;
