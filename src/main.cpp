@@ -2,6 +2,7 @@
 
 #include "app_config.hpp"
 #include "log.hpp"
+#include "modbus_manager.hpp"
 #include "mqtt_manager.hpp"
 #include "network_manager.hpp"
 
@@ -9,6 +10,7 @@ namespace {
 
 TaskHandle_t networkTaskHandle = nullptr;
 TaskHandle_t mqttTaskHandle = nullptr;
+TaskHandle_t modbusTaskHandle = nullptr;
 
 // ----- Network monitor task -----
 
@@ -44,9 +46,44 @@ void mqttTask(void *) {
   }
 }
 
+// ----- Modbus task -----
+
+void modbusTask(void *) {
+  auto &net = NetworkManager::instance();
+  auto &modbus = ModbusManager::instance();
+  modbus.begin();
+
+  std::vector<float> values;
+
+  for (;;) {
+    if (net.isConnected()) {
+      modbus.loop();
+      
+      if (modbus.readDevice(kModbusDeviceIp, kModbusStartReg, kModbusTotalRegs, values)) {
+        LOGI("Modbus data: ");
+        for (size_t i = 0; i < values.size(); i++) {
+          Serial.printf("%.2f%s", values[i], (i < values.size() - 1) ? ", " : "\n");
+        }
+      }
+      vTaskDelay(pdMS_TO_TICKS(kModbusReadPeriodMs));
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+  }
+}
+
 }  // namespace
 
 void setup() {
+
+  xTaskCreatePinnedToCore(
+      modbusTask,
+      "modbus-task",
+      kModbusTaskStackWords,
+      nullptr,
+      kModbusTaskPriority,
+      &modbusTaskHandle,
+      kModbusTaskCore);
   Serial.begin(115200);
   delay(50);
 

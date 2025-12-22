@@ -42,6 +42,17 @@ constexpr UBaseType_t kMqttTaskPriority = 2;
 constexpr BaseType_t kMqttTaskCore = PRO_CPU_NUM;  // Core 0
 constexpr uint32_t kMqttLoopDelayMs = 200;
 
+// Modbus TCP
+static const IPAddress kModbusDeviceIp(192, 168, 1, 10);
+constexpr uint16_t kModbusStartReg = 0;
+constexpr uint16_t kModbusTotalRegs = 20;  // 10 floats (2 regs cada uno)
+constexpr uint16_t kModbusChunkSize = 20;
+constexpr uint32_t kModbusChunkDelayMs = 200;
+constexpr uint32_t kModbusReadPeriodMs = 4000;
+constexpr uint32_t kModbusTaskStackWords = 4096;
+constexpr UBaseType_t kModbusTaskPriority = 1;
+constexpr BaseType_t kModbusTaskCore = APP_CPU_NUM;  // Core 1 para lógica
+
 // Certificado raíz/servidor para TLS MQTT
 static const char kMqttCaCert[] PROGMEM = R"PEM(
 -----BEGIN CERTIFICATE-----
