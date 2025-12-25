@@ -5,13 +5,22 @@
 
 #include "app_config.hpp"
 
+struct ModbusDeviceData {
+  const char* name;
+  IPAddress ip;
+  std::vector<float> values;
+  bool success;
+};
+
 class ModbusManager {
  public:
   static ModbusManager &instance();
 
   void begin();
   void loop();
-  bool readDevice(IPAddress deviceIp, uint16_t startReg, uint16_t totalRegs, std::vector<float> &values);
+  bool readDevice(IPAddress deviceIp, uint8_t unitId, uint16_t startReg, uint16_t totalRegs, 
+                  ModbusRegisterType regType, std::vector<float> &values);
+  bool readAllDevices(std::vector<ModbusDeviceData> &devicesData);
 
  private:
   ModbusManager() = default;

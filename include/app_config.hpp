@@ -28,7 +28,7 @@ static const IPAddress kStaticDns(8, 8, 8, 8);
 constexpr uint32_t kNetworkTaskStackWords = 4096;
 constexpr UBaseType_t kNetworkTaskPriority = 1;
 constexpr BaseType_t kNetworkTaskCore = PRO_CPU_NUM;  // Core 0 para red
-constexpr uint32_t kNetworkTaskPeriodMs = 2000;
+constexpr uint32_t kNetworkTaskPeriodMs = 60000;
 
 // MQTT
 constexpr const char *kMqttBrokerHost = "mqtt.agrotecsa.com.mx";
@@ -43,13 +43,33 @@ constexpr BaseType_t kMqttTaskCore = PRO_CPU_NUM;  // Core 0
 constexpr uint32_t kMqttLoopDelayMs = 200;
 
 // Modbus TCP
-static const IPAddress kModbusDeviceIp(192, 168, 1, 10);
-constexpr uint16_t kModbusStartReg = 0;
-constexpr uint16_t kModbusTotalRegs = 20;  // 10 floats (2 regs cada uno)
-constexpr uint16_t kModbusChunkSize = 20;
-constexpr uint32_t kModbusChunkDelayMs = 200;
+enum class ModbusRegisterType : uint8_t {
+  HOLDING_REGISTER = 0,
+  INPUT_REGISTER = 1
+};
+
+struct ModbusDeviceConfig {
+  IPAddress ip;
+  uint8_t unitId;           // Modbus Unit ID (slave ID)
+  uint16_t startReg;
+  uint16_t totalRegs;       // Debe ser par (2 regs por float)
+  ModbusRegisterType regType;
+  const char* name;
+};
+
+// Lista de dispositivos Modbus a leer (hasta 120 registros por dispositivo)
+static const ModbusDeviceConfig kModbusDevices[] = {
+  {IPAddress(192, 168, 1, 11), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, "Device_1"},
+  {IPAddress(192, 168, 1, 10), 1, 0, 20, ModbusRegisterType::HOLDING_REGISTER, "Device_2"},
+  // Ejemplo con más registros: {IPAddress(192, 168, 1, 12), 1, 0, 120, ModbusRegisterType::HOLDING_REGISTER, "Device_3"},
+};
+constexpr size_t kModbusDeviceCount = sizeof(kModbusDevices) / sizeof(kModbusDevices[0]);
+
+constexpr uint16_t kModbusChunkSize = 60;  // Leer hasta 60 registros por chunk (max 120 regs totales)
+constexpr uint32_t kModbusChunkDelayMs = 300;  // Delay aumentado para chunks más grandes
 constexpr uint32_t kModbusReadPeriodMs = 4000;
-constexpr uint32_t kModbusTaskStackWords = 4096;
+constexpr uint32_t kModbusInterDeviceDelayMs = 500;  // Delay entre dispositivos
+constexpr uint32_t kModbusTaskStackWords = 10240;  // Stack para manejar hasta 120 registros por dispositivo
 constexpr UBaseType_t kModbusTaskPriority = 1;
 constexpr BaseType_t kModbusTaskCore = APP_CPU_NUM;  // Core 1 para lógica
 

@@ -53,18 +53,30 @@ void modbusTask(void *) {
   auto &modbus = ModbusManager::instance();
   modbus.begin();
 
-  std::vector<float> values;
+  std::vector<ModbusDeviceData> devicesData;
 
   for (;;) {
     if (net.isConnected()) {
       modbus.loop();
       
-      if (modbus.readDevice(kModbusDeviceIp, kModbusStartReg, kModbusTotalRegs, values)) {
-        LOGI("Modbus data: ");
-        for (size_t i = 0; i < values.size(); i++) {
-          Serial.printf("%.2f%s", values[i], (i < values.size() - 1) ? ", " : "\n");
+      if (modbus.readAllDevices(devicesData)) {
+        // Todos los dispositivos leídos correctamente
+        for (const auto &device : devicesData) {
+          if (device.success) {
+            LOGI("[%s] Data: ", device.name);
+            for (size_t i = 0; i < device.values.size(); i++) {
+              Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
+            }
+          }
         }
+      } else {
+        LOGW("Some Modbus devices failed to read\n");
       }
+      
+      // Liberar vectores y consolidar heap
+      devicesData.clear();
+      devicesData.shrink_to_fit();
+      
       vTaskDelay(pdMS_TO_TICKS(kModbusReadPeriodMs));
     } else {
       vTaskDelay(pdMS_TO_TICKS(1000));
@@ -75,15 +87,6 @@ void modbusTask(void *) {
 }  // namespace
 
 void setup() {
-
-  xTaskCreatePinnedToCore(
-      modbusTask,
-      "modbus-task",
-      kModbusTaskStackWords,
-      nullptr,
-      kModbusTaskPriority,
-      &modbusTaskHandle,
-      kModbusTaskCore);
   Serial.begin(115200);
   delay(50);
 
@@ -110,6 +113,15 @@ void setup() {
       kMqttTaskPriority,
       &mqttTaskHandle,
       kMqttTaskCore);
+
+  xTaskCreatePinnedToCore(
+      modbusTask,
+      "modbus-task",
+      kModbusTaskStackWords,
+      nullptr,
+      kModbusTaskPriority,
+      &modbusTaskHandle,
+      kModbusTaskCore);
 }
 
 void loop() {
