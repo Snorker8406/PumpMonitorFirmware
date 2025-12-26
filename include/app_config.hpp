@@ -73,6 +73,18 @@ constexpr uint32_t kModbusTaskStackWords = 10240;  // Stack para manejar hasta 1
 constexpr UBaseType_t kModbusTaskPriority = 1;
 constexpr BaseType_t kModbusTaskCore = APP_CPU_NUM;  // Core 1 para lógica
 
+// SD Card SPI
+constexpr int kSdCsPin = 2;
+constexpr int kSdMosiPin = 17;
+constexpr int kSdSckPin = 14;
+constexpr int kSdMisoPin = 35;
+constexpr uint32_t kSdSpiFrequency = 4000000;  // 4 MHz
+constexpr const char* kSdDataPath = "/data";
+constexpr uint32_t kSdTaskStackWords = 8192;
+constexpr UBaseType_t kSdTaskPriority = 1;
+constexpr BaseType_t kSdTaskCore = APP_CPU_NUM;  // Core 1
+constexpr uint32_t kSdWritePeriodMs = 10000;  // Guardar cada 10 segundos
+
 // Certificado raíz/servidor para TLS MQTT
 static const char kMqttCaCert[] PROGMEM = R"PEM(
 -----BEGIN CERTIFICATE-----

@@ -5,12 +5,14 @@
 #include "modbus_manager.hpp"
 #include "mqtt_manager.hpp"
 #include "network_manager.hpp"
+#include "sd_manager.hpp"
 
 namespace {
 
 TaskHandle_t networkTaskHandle = nullptr;
 TaskHandle_t mqttTaskHandle = nullptr;
 TaskHandle_t modbusTaskHandle = nullptr;
+TaskHandle_t sdTaskHandle = nullptr;
 
 // ----- Network monitor task -----
 
@@ -84,6 +86,72 @@ void modbusTask(void *) {
   }
 }
 
+// ----- SD storage task -----
+
+void sdTask(void *) {
+  auto &net = NetworkManager::instance();
+  auto &sd = SdManager::instance();
+  auto &modbus = ModbusManager::instance();
+  
+  // Intentar inicializar SD
+  if (!sd.begin()) {
+    LOGE("SD task: initialization failed, task will retry periodically\n");
+  }
+
+  std::vector<ModbusDeviceData> devicesData;
+  std::vector<SensorDataRecord> recordsBuffer;
+  recordsBuffer.reserve(kModbusDeviceCount);
+
+  for (;;) {
+    // Reintentar inicialización si falló
+    if (!sd.isAvailable()) {
+      LOGW("SD not available, retrying initialization...\n");
+      sd.begin();
+      vTaskDelay(pdMS_TO_TICKS(5000));
+      continue;
+    }
+
+    if (net.isConnected()) {
+      // Leer datos de Modbus
+      if (modbus.readAllDevices(devicesData)) {
+        recordsBuffer.clear();
+        
+        // Convertir a registros para SD
+        unsigned long timestamp = millis() / 1000;  // timestamp en segundos
+        for (const auto &device : devicesData) {
+          if (device.success && !device.values.empty()) {
+            SensorDataRecord record;
+            record.timestamp = timestamp;
+            record.deviceName = device.name;
+            record.deviceIp = device.ip;
+            record.values = device.values;
+            recordsBuffer.push_back(record);
+          }
+        }
+        
+        // Escribir batch a SD
+        if (!recordsBuffer.empty()) {
+          if (sd.writeDataBatch(recordsBuffer)) {
+            LOGI("SD: %u records saved\n", recordsBuffer.size());
+          } else {
+            LOGW("SD: write failed\n");
+          }
+        }
+      }
+      
+      // Liberar memoria
+      devicesData.clear();
+      devicesData.shrink_to_fit();
+      recordsBuffer.clear();
+      recordsBuffer.shrink_to_fit();
+      
+      vTaskDelay(pdMS_TO_TICKS(kSdWritePeriodMs));
+    } else {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+  }
+}
+
 }  // namespace
 
 void setup() {
@@ -122,6 +190,15 @@ void setup() {
       kModbusTaskPriority,
       &modbusTaskHandle,
       kModbusTaskCore);
+
+  xTaskCreatePinnedToCore(
+      sdTask,
+      "sd-task",
+      kSdTaskStackWords,
+      nullptr,
+      kSdTaskPriority,
+      &sdTaskHandle,
+      kSdTaskCore);
 }
 
 void loop() {
