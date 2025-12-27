@@ -35,7 +35,7 @@ class SdManager {
  private:
   SdManager() = default;
   bool ensureDirectoryExists(const char* path);
-  String generateFilename() const;
+  void generateFilename(char* buffer, size_t bufferSize) const;
   
   bool initialized_ = false;
   SPIClass spi_;

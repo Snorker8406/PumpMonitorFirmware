@@ -85,6 +85,10 @@ constexpr UBaseType_t kSdTaskPriority = 1;
 constexpr BaseType_t kSdTaskCore = APP_CPU_NUM;  // Core 1
 constexpr uint32_t kSdWritePeriodMs = 10000;  // Guardar cada 10 segundos
 
+// RTC DS3231 I2C
+constexpr int kRtcSdaPin = 33;
+constexpr int kRtcSclPin = 5;
+
 // Certificado raíz/servidor para TLS MQTT
 static const char kMqttCaCert[] PROGMEM = R"PEM(
 -----BEGIN CERTIFICATE-----

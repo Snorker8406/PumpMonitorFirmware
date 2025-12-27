@@ -2,6 +2,7 @@
 
 #include <time.h>
 #include "log.hpp"
+#include "rtc_manager.hpp"
 
 SdManager &SdManager::instance() {
   static SdManager inst;
@@ -74,20 +75,31 @@ bool SdManager::ensureDirectoryExists(const char* path) {
   return SD.mkdir(path);
 }
 
-String SdManager::generateFilename() const {
-  // Formato: /data/YYYYMMDD.csv
-  time_t now = time(nullptr);
-  struct tm timeinfo;
-  localtime_r(&now, &timeinfo);
+void SdManager::generateFilename(char* buffer, size_t bufferSize) const {
+  // Formato: /data/YYYYMMDD.csv usando RTC
+  auto &rtc = RtcManager::instance();
   
-  char filename[32];
-  snprintf(filename, sizeof(filename), "%s/%04d%02d%02d.csv",
+  if (!rtc.isAvailable()) {
+    // Fallback a tiempo del sistema si RTC no está disponible
+    time_t now = time(nullptr);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+    
+    snprintf(buffer, bufferSize, "%s/%04d%02d%02d.csv",
+             kSdDataPath,
+             timeinfo.tm_year + 1900,
+             timeinfo.tm_mon + 1,
+             timeinfo.tm_mday);
+    return;
+  }
+  
+  // Usar fecha del RTC
+  DateTime now = rtc.now();
+  snprintf(buffer, bufferSize, "%s/%04d%02d%02d.csv",
            kSdDataPath,
-           timeinfo.tm_year + 1900,
-           timeinfo.tm_mon + 1,
-           timeinfo.tm_mday);
-  
-  return String(filename);
+           now.year(),
+           now.month(),
+           now.day());
 }
 
 bool SdManager::writeDataRecord(const SensorDataRecord &record) {
@@ -95,12 +107,13 @@ bool SdManager::writeDataRecord(const SensorDataRecord &record) {
     return false;
   }
 
-  String filename = generateFilename();
+  char filename[32];
+  generateFilename(filename, sizeof(filename));
   bool fileExists = SD.exists(filename);
   
   File file = SD.open(filename, FILE_APPEND);
   if (!file) {
-    LOGE("Failed to open file for writing: %s\n", filename.c_str());
+    LOGE("Failed to open file for writing\n");
     return false;
   }
 
@@ -135,12 +148,13 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
     return false;
   }
 
-  String filename = generateFilename();
+  char filename[32];
+  generateFilename(filename, sizeof(filename));
   bool fileExists = SD.exists(filename);
   
   File file = SD.open(filename, FILE_APPEND);
   if (!file) {
-    LOGE("Failed to open file for batch writing: %s\n", filename.c_str());
+    LOGE("Failed to open file for batch writing\n");
     return false;
   }
 
@@ -169,7 +183,7 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
   }
 
   file.close();
-  LOGI("Batch written: %u records to %s\n", records.size(), filename.c_str());
+  LOGI("Batch written: %u records\n", records.size());
   return true;
 }
 
