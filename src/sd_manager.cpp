@@ -1,6 +1,7 @@
 #include "sd_manager.hpp"
 
 #include <time.h>
+#include <stdarg.h>
 #include "log.hpp"
 #include "rtc_manager.hpp"
 
@@ -49,6 +50,11 @@ bool SdManager::begin() {
   if (!ensureDirectoryExists(kSdDataPath)) {
     LOGW("Could not create data directory\n");
   }
+  
+  // Crear directorio de errores si no existe
+  if (!ensureDirectoryExists(kSdErrorPath)) {
+    LOGW("Could not create error directory\n");
+  }
 
   return true;
 }
@@ -85,7 +91,7 @@ void SdManager::generateFilename(char* buffer, size_t bufferSize) const {
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
     
-    snprintf(buffer, bufferSize, "%s/%04d%02d%02d.csv",
+    snprintf(buffer, bufferSize, "%s/%04d%02d%02d.txt",
              kSdDataPath,
              timeinfo.tm_year + 1900,
              timeinfo.tm_mon + 1,
@@ -95,7 +101,7 @@ void SdManager::generateFilename(char* buffer, size_t bufferSize) const {
   
   // Usar fecha del RTC
   DateTime now = rtc.now();
-  snprintf(buffer, bufferSize, "%s/%04d%02d%02d.csv",
+  snprintf(buffer, bufferSize, "%s/%04d%02d%02d.txt",
            kSdDataPath,
            now.year(),
            now.month(),
@@ -109,7 +115,6 @@ bool SdManager::writeDataRecord(const SensorDataRecord &record) {
 
   char filename[32];
   generateFilename(filename, sizeof(filename));
-  bool fileExists = SD.exists(filename);
   
   File file = SD.open(filename, FILE_APPEND);
   if (!file) {
@@ -117,27 +122,14 @@ bool SdManager::writeDataRecord(const SensorDataRecord &record) {
     return false;
   }
 
-  // Escribir header si el archivo es nuevo
-  if (!fileExists) {
-    file.println("timestamp,device_name,device_ip,values");
-  }
+  // Formato: {timestamp},{device_name},{hexadecimales}
+  file.printf("%lu,%s,", record.timestamp, record.deviceName);
 
-  // Escribir datos: timestamp,nombre,ip,"val1,val2,val3,..."
-  file.printf("%lu,%s,%u.%u.%u.%u,\"",
-              record.timestamp,
-              record.deviceName,
-              record.deviceIp[0],
-              record.deviceIp[1],
-              record.deviceIp[2],
-              record.deviceIp[3]);
-
-  for (size_t i = 0; i < record.values.size(); i++) {
-    file.printf("%.2f", record.values[i]);
-    if (i < record.values.size() - 1) {
-      file.print(",");
-    }
+  // Escribir datos hexadecimales
+  for (size_t i = 0; i < record.rawData.size(); i++) {
+    file.printf("%04X", record.rawData[i]);
   }
-  file.println("\"");
+  file.println();
 
   file.close();
   return true;
@@ -150,7 +142,6 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
 
   char filename[32];
   generateFilename(filename, sizeof(filename));
-  bool fileExists = SD.exists(filename);
   
   File file = SD.open(filename, FILE_APPEND);
   if (!file) {
@@ -158,28 +149,15 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
     return false;
   }
 
-  // Escribir header si el archivo es nuevo
-  if (!fileExists) {
-    file.println("timestamp,device_name,device_ip,values");
-  }
-
-  // Escribir todos los registros
+  // Escribir todos los registros en formato: {timestamp},{device_name},{hexadecimales}
   for (const auto &record : records) {
-    file.printf("%lu,%s,%u.%u.%u.%u,\"",
-                record.timestamp,
-                record.deviceName,
-                record.deviceIp[0],
-                record.deviceIp[1],
-                record.deviceIp[2],
-                record.deviceIp[3]);
+    file.printf("%lu,%s,", record.timestamp, record.deviceName);
 
-    for (size_t i = 0; i < record.values.size(); i++) {
-      file.printf("%.2f", record.values[i]);
-      if (i < record.values.size() - 1) {
-        file.print(",");
-      }
+    // Escribir datos hexadecimales
+    for (size_t i = 0; i < record.rawData.size(); i++) {
+      file.printf("%04X", record.rawData[i]);
     }
-    file.println("\"");
+    file.println();
   }
 
   file.close();
@@ -203,3 +181,90 @@ uint64_t SdManager::getFreeBytes() const {
 sdcard_type_t SdManager::getCardType() const {
   return initialized_ ? SD.cardType() : CARD_NONE;
 }
+
+void SdManager::generateErrorFilename(char* buffer, size_t bufferSize) const {
+  // Formato: /error/err_YYYYMMDD.txt usando RTC
+  auto &rtc = RtcManager::instance();
+  
+  if (!rtc.isAvailable()) {
+    // Fallback a tiempo del sistema si RTC no está disponible
+    time_t now = time(nullptr);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+    
+    snprintf(buffer, bufferSize, "%s/err_%04d%02d%02d.txt",
+             kSdErrorPath,
+             timeinfo.tm_year + 1900,
+             timeinfo.tm_mon + 1,
+             timeinfo.tm_mday);
+    return;
+  }
+  
+  // Usar fecha del RTC
+  DateTime now = rtc.now();
+  snprintf(buffer, bufferSize, "%s/err_%04d%02d%02d.txt",
+           kSdErrorPath,
+           now.year(),
+           now.month(),
+           now.day());
+}
+
+void SdManager::getTimestamp(char* buffer, size_t bufferSize) const {
+  auto &rtc = RtcManager::instance();
+  
+  if (!rtc.isAvailable()) {
+    // Fallback a millis si RTC no está disponible
+    unsigned long ms = millis();
+    snprintf(buffer, bufferSize, "%lu", ms / 1000);
+    return;
+  }
+  
+  // Usar timestamp del RTC
+  DateTime now = rtc.now();
+  snprintf(buffer, bufferSize, "%04d-%02d-%02d %02d:%02d:%02d",
+           now.year(), now.month(), now.day(),
+           now.hour(), now.minute(), now.second());
+}
+
+bool SdManager::writeErrorLog(const char* level, const char* message) {
+  if (!initialized_ || level == nullptr || message == nullptr) {
+    return false;
+  }
+
+  char filename[40];
+  generateErrorFilename(filename, sizeof(filename));
+  
+  File file = SD.open(filename, FILE_APPEND);
+  if (!file) {
+    return false;
+  }
+
+  char timestamp[32];
+  getTimestamp(timestamp, sizeof(timestamp));
+  
+  file.printf("[%s] [%s] %s", timestamp, level, message);
+  
+  // Agregar newline si no existe
+  size_t len = strlen(message);
+  if (len == 0 || message[len-1] != '\n') {
+    file.println();
+  }
+  
+  file.close();
+  return true;
+}
+
+bool SdManager::writeErrorLogFormatted(const char* level, const char* fmt, ...) {
+  if (!initialized_ || level == nullptr || fmt == nullptr) {
+    return false;
+  }
+
+  char message[256];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(message, sizeof(message), fmt, args);
+  va_end(args);
+
+  return writeErrorLog(level, message);
+}
+

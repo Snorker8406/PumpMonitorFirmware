@@ -26,15 +26,23 @@ bool ModbusManager::ensureConnected(IPAddress deviceIp) {
     LOGI("Modbus connecting to %u.%u.%u.%u...\n", deviceIp[0], deviceIp[1], deviceIp[2], deviceIp[3]);
     client_.connect(deviceIp);
     vTaskDelay(pdMS_TO_TICKS(100));
+    if (!client_.isConnected(deviceIp)) {
+      LOGE("Modbus connection failed to %u.%u.%u.%u\n", deviceIp[0], deviceIp[1], deviceIp[2], deviceIp[3]);
+    }
     return false;
   }
   return true;
 }
 
 bool ModbusManager::readDevice(IPAddress deviceIp, uint8_t unitId, uint16_t startReg, uint16_t totalRegs, 
-                               ModbusRegisterType regType, std::vector<float> &values) {
+                               ModbusRegisterType regType, std::vector<float> &values, std::vector<uint16_t> *rawData) {
   values.clear();
   values.reserve(totalRegs / 2);  // Pre-reserve para evitar realocaciones
+  
+  if (rawData) {
+    rawData->clear();
+    rawData->reserve(totalRegs);
+  }
 
   if (!ensureConnected(deviceIp)) {
     return false;
@@ -55,8 +63,9 @@ bool ModbusManager::readDevice(IPAddress deviceIp, uint8_t unitId, uint16_t star
     }
     
     if (!success) {
-      LOGW("Modbus read failed at offset %u (unitId=%u, regType=%s)\n", 
-           offset, unitId, regType == ModbusRegisterType::HOLDING_REGISTER ? "HOLD" : "INPUT");
+      LOGE("Modbus read failed at offset %u (unitId=%u, regType=%s, ip=%u.%u.%u.%u)\n", 
+           offset, unitId, regType == ModbusRegisterType::HOLDING_REGISTER ? "HOLD" : "INPUT",
+           deviceIp[0], deviceIp[1], deviceIp[2], deviceIp[3]);
       return false;
     }
 
@@ -65,6 +74,13 @@ bool ModbusManager::readDevice(IPAddress deviceIp, uint8_t unitId, uint16_t star
     offset += regsToRead;
   }
 
+  // Guardar datos raw si se solicitan
+  if (rawData) {
+    for (uint16_t i = 0; i < totalRegs; i++) {
+      rawData->push_back(regsBuffer[i]);
+    }
+  }
+  
   // Convertir pares de registros a floats
   for (uint16_t i = 0; i < totalRegs; i += 2) {
     if (i + 1 < totalRegs) {
@@ -88,11 +104,11 @@ bool ModbusManager::readAllDevices(std::vector<ModbusDeviceData> &devicesData) {
     data.name = config.name;
     data.ip = config.ip;
     data.success = readDevice(config.ip, config.unitId, config.startReg, config.totalRegs, 
-                              config.regType, data.values);
+                              config.regType, data.values, &data.rawData);
     
     if (!data.success) {
       allSuccess = false;
-      LOGW("Failed to read %s (%u.%u.%u.%u)\n", config.name, config.ip[0], config.ip[1], config.ip[2], config.ip[3]);
+      LOGE("Failed to read %s (%u.%u.%u.%u)\n", config.name, config.ip[0], config.ip[1], config.ip[2], config.ip[3]);
     }
     
     devicesData.push_back(data);

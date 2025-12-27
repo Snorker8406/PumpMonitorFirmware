@@ -9,6 +9,7 @@ struct ModbusDeviceData {
   const char* name;
   IPAddress ip;
   std::vector<float> values;
+  std::vector<uint16_t> rawData;  // Datos crudos en hexadecimal
   bool success;
 };
 
@@ -19,7 +20,7 @@ class ModbusManager {
   void begin();
   void loop();
   bool readDevice(IPAddress deviceIp, uint8_t unitId, uint16_t startReg, uint16_t totalRegs, 
-                  ModbusRegisterType regType, std::vector<float> &values);
+                  ModbusRegisterType regType, std::vector<float> &values, std::vector<uint16_t> *rawData = nullptr);
   bool readAllDevices(std::vector<ModbusDeviceData> &devicesData);
 
  private:

@@ -14,6 +14,9 @@ enum LogLevel : uint8_t {
 #define LOG_LEVEL LOG_LEVEL_DEBUG
 #endif
 
+// Declaración de función auxiliar para escribir a SD
+void logToSdFile(LogLevel level, const char* fmt, ...);
+
 #if ENABLE_DEBUG_LOG
   #define LOG_ENABLED(level) ((level) <= LOG_LEVEL)
   #define LOG_PRINT(level, fmt, ...)            \
@@ -21,6 +24,9 @@ enum LogLevel : uint8_t {
       if (LOG_ENABLED(level)) {                 \
         static const char *kTags[] = {"E", "W", "I", "D"}; \
         Serial.printf("[%s] " fmt, kTags[level], ##__VA_ARGS__); \
+        if ((level) <= LOG_LEVEL_WARN) {        \
+          logToSdFile((LogLevel)(level), fmt, ##__VA_ARGS__); \
+        }                                       \
       }                                         \
     } while (0)
 #else
@@ -32,3 +38,5 @@ enum LogLevel : uint8_t {
 #define LOGW(fmt, ...) LOG_PRINT(LOG_LEVEL_WARN, fmt, ##__VA_ARGS__)
 #define LOGI(fmt, ...) LOG_PRINT(LOG_LEVEL_INFO, fmt, ##__VA_ARGS__)
 #define LOGD(fmt, ...) LOG_PRINT(LOG_LEVEL_DEBUG, fmt, ##__VA_ARGS__)
+
+

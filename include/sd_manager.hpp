@@ -12,6 +12,7 @@ struct SensorDataRecord {
   const char* deviceName;
   IPAddress deviceIp;
   std::vector<float> values;
+  std::vector<uint16_t> rawData;  // Datos hexadecimales crudos
 };
 
 class SdManager {
@@ -26,6 +27,10 @@ class SdManager {
   bool writeDataRecord(const SensorDataRecord &record);
   bool writeDataBatch(const std::vector<SensorDataRecord> &records);
   
+  // Logging de errores
+  bool writeErrorLog(const char* level, const char* message);
+  bool writeErrorLogFormatted(const char* level, const char* fmt, ...);
+  
   // Información de la tarjeta
   uint64_t getTotalBytes() const;
   uint64_t getUsedBytes() const;
@@ -36,6 +41,8 @@ class SdManager {
   SdManager() = default;
   bool ensureDirectoryExists(const char* path);
   void generateFilename(char* buffer, size_t bufferSize) const;
+  void generateErrorFilename(char* buffer, size_t bufferSize) const;
+  void getTimestamp(char* buffer, size_t bufferSize) const;
   
   bool initialized_ = false;
   SPIClass spi_;

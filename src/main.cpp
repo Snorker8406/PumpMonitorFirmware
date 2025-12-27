@@ -1,12 +1,28 @@
 #include <Arduino.h>
 
 #include "app_config.hpp"
-#include "log.hpp"
 #include "modbus_manager.hpp"
 #include "mqtt_manager.hpp"
 #include "network_manager.hpp"
 #include "rtc_manager.hpp"
 #include "sd_manager.hpp"
+#include "log.hpp"
+
+// Implementación de función auxiliar para escribir logs a SD
+void logToSdFile(LogLevel level, const char* fmt, ...) {
+  if (level > LOG_LEVEL_WARN) return; // Solo E y W van a SD
+  
+  SdManager& sd = SdManager::instance();
+  
+  char buffer[256];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, args);
+  va_end(args);
+  
+  static const char *kLevelNames[] = {"ERROR", "WARN", "INFO", "DEBUG"};
+  sd.writeErrorLog(kLevelNames[level], buffer);
+}
 
 namespace {
 
@@ -90,15 +106,18 @@ void modbusTask(void *) {
               Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
             }
             
-            // Preparar registro para SD
-            if (!device.values.empty()) {
+            // Preparar registro para SD con datos raw hexadecimales
+            if (!device.rawData.empty()) {
               SensorDataRecord record;
               record.timestamp = timestamp;
               record.deviceName = device.name;
               record.deviceIp = device.ip;
               record.values = device.values;
+              record.rawData = device.rawData;
               recordsBuffer.push_back(record);
             }
+          } else {
+            LOGE("Device %s read failed, no data available\n", device.name);
           }
         }
         
@@ -107,11 +126,11 @@ void modbusTask(void *) {
           if (sd.writeDataBatch(recordsBuffer)) {
             LOGI("SD: %u records saved\n", recordsBuffer.size());
           } else {
-            LOGW("SD: write failed\n");
+            LOGE("SD: failed to write %u records\n", recordsBuffer.size());
           }
         }
       } else {
-        LOGW("Some Modbus devices failed to read\n");
+        LOGE("Modbus read failed for all devices\n");
       }
       
       // Liberar vectores y consolidar heap

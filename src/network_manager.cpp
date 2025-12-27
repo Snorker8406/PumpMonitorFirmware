@@ -29,12 +29,17 @@ bool NetworkManager::begin(uint32_t timeoutMs) {
   }
 
   if (!ETH.begin(kEthAddr, kEthPowerPin, kEthMdcPin, kEthMdioPin, kEthPhy, kEthClockMode)) {
+    LOGE("ETH.begin() failed - check hardware configuration\n");
     return false;
   }
 
   const uint32_t start = millis();
   while (!connected_ && (millis() - start) < timeoutMs) {
     vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  
+  if (!connected_) {
+    LOGE("ETH connection timeout after %lu ms\n", timeoutMs);
   }
 
   if (connected_) {

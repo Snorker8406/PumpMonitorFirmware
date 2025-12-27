@@ -50,7 +50,9 @@ bool MqttManager::connectInternal() {
   if (ok) {
     LOGI("MQTT connected\n");
   } else {
-    LOGW("MQTT connect failed rc=%d\n", client_.state());
+    int state = client_.state();
+    LOGE("MQTT connect failed rc=%d (broker=%s:%u, user=%s)\n", 
+         state, kMqttBrokerHost, kMqttBrokerPort, username);
   }
   return ok;
 }

@@ -80,6 +80,7 @@ constexpr int kSdSckPin = 14;
 constexpr int kSdMisoPin = 35;
 constexpr uint32_t kSdSpiFrequency = 4000000;  // 4 MHz
 constexpr const char* kSdDataPath = "/data";
+constexpr const char* kSdErrorPath = "/error";
 constexpr uint32_t kSdTaskStackWords = 8192;
 constexpr UBaseType_t kSdTaskPriority = 1;
 constexpr BaseType_t kSdTaskCore = APP_CPU_NUM;  // Core 1
