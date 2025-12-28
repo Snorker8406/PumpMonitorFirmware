@@ -6,6 +6,7 @@
 #include "log.hpp"
 #include "network_manager.hpp"
 #include "eeprom_manager.hpp"
+#include "rtc_manager.hpp"
 
 namespace {
 constexpr char kMqttClientIdPrefix[] = "pump-monitor";
@@ -131,6 +132,59 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGI("MQTT: Published all variables\n");
     } else {
       LOGE("MQTT: Failed to publish all variables\n");
+    }
+  }
+  // Procesar ajuste de hora del RTC: device/{MAC}/adjustDeviceTime
+  else if (strstr(topic, "/adjustDeviceTime") != nullptr) {
+    // Parsear mensaje: año,mes,dia,hora,minuto,segundo
+    int year, month, day, hour, minute, second;
+    int parsed = sscanf(msg, "%d,%d,%d,%d,%d,%d", &year, &month, &day, &hour, &minute, &second);
+    
+    if (parsed != 6) {
+      LOGE("MQTT: Invalid time format. Expected: year,month,day,hour,minute,second\n");
+      return;
+    }
+    
+    // Validar rangos básicos
+    if (year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31 ||
+        hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+      LOGE("MQTT: Time values out of range\n");
+      return;
+    }
+    
+    // Ajustar el RTC
+    auto &rtc = RtcManager::instance();
+    if (rtc.setDateTime(year, month, day, hour, minute, second)) {
+      LOGI("MQTT: RTC time updated to %04d-%02d-%02d %02d:%02d:%02d\n",
+           year, month, day, hour, minute, second);
+      
+      // Obtener hora actualizada del RTC y publicar confirmación
+      const char *macColoned = NetworkManager::instance().macString();
+      char macNoColon[13] = {0};
+      int idx = 0;
+      for (const char *p = macColoned; *p && idx < 12; ++p) {
+        if (*p != ':') {
+          macNoColon[idx++] = *p;
+        }
+      }
+      
+      DateTime now = rtc.now();
+      char timeBuffer[32];
+      snprintf(timeBuffer, sizeof(timeBuffer), "%04d-%02d-%02d %02d:%02d:%02d",
+               now.year(), now.month(), now.day(),
+               now.hour(), now.minute(), now.second());
+      
+      char responseTopic[64];
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/deviceTime", macNoColon);
+      
+      auto &mqtt = MqttManager::instance();
+      if (mqtt.publish(responseTopic, timeBuffer)) {
+        LOGI("MQTT: Published device time confirmation\n");
+      } else {
+        LOGE("MQTT: Failed to publish device time\n");
+      }
+    } else {
+      LOGE("MQTT: Failed to update RTC time\n");
     }
   }
 }
