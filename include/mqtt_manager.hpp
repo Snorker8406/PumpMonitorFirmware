@@ -14,10 +14,12 @@ class MqttManager {
   void ensureConnected();
   void disconnect();
   bool isConnected();
+  bool publish(const char* topic, const char* payload);
 
  private:
   MqttManager();
   bool connectInternal();
+  static void messageCallback(char* topic, byte* payload, unsigned int length);
 
   WiFiClientSecure secureClient_;
   PubSubClient client_;

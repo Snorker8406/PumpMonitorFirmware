@@ -6,6 +6,7 @@
 #include "network_manager.hpp"
 #include "rtc_manager.hpp"
 #include "sd_manager.hpp"
+#include "eeprom_manager.hpp"
 #include "log.hpp"
 
 // Implementación de función auxiliar para escribir logs a SD
@@ -183,6 +184,12 @@ void setup() {
 
   // ----- Startup & initialization -----
   LOGI("Booting...\n");
+  
+  // Inicializar EEPROM
+  EepromManager::instance().begin();
+  LOGI("Master URL: %s\n", EepromManager::instance().getMasterWebServiceURL().c_str());
+  LOGI("Client URL: %s\n", EepromManager::instance().getClientWebServiceURL().c_str());
+  LOGI("Firmware Version: %s\n", EepromManager::instance().getFirmwareVersion().c_str());
   
   // Inicializar RTC primero
   const bool rtcOk = RtcManager::instance().begin();
