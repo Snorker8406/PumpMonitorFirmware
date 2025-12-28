@@ -61,6 +61,20 @@ void EepromManager::begin() {
   } else {
     LOGI("EEPROM: Firmware Version loaded: %s\n", currentFwVer.c_str());
   }
+  
+  // Verificar si existe Real Time Interval en EEPROM
+  uint16_t currentRTInterval = prefs_.getUShort(kKeyRTInterval, 0);
+  
+  if (currentRTInterval == 0) {
+    // Primera vez o EEPROM vacía - guardar intervalo por defecto
+    if (setRealTimeIntervalSec(kDefaultRTInterval)) {
+      LOGI("EEPROM: Real Time Interval set to default: %u sec\n", kDefaultRTInterval);
+    } else {
+      LOGE("EEPROM: Failed to set default Real Time Interval\n");
+    }
+  } else {
+    LOGI("EEPROM: Real Time Interval loaded: %u sec\n", currentRTInterval);
+  }
 }
 
 String EepromManager::getMasterWebServiceURL() {
@@ -174,6 +188,38 @@ bool EepromManager::setFirmwareVersion(const char* version) {
   return true;
 }
 
+uint16_t EepromManager::getRealTimeIntervalSec() {
+  if (!initialized_) {
+    LOGW("EEPROM: Not initialized, returning default Real Time Interval\n");
+    return kDefaultRTInterval;
+  }
+
+  uint16_t interval = prefs_.getUShort(kKeyRTInterval, kDefaultRTInterval);
+  return interval;
+}
+
+bool EepromManager::setRealTimeIntervalSec(uint16_t seconds) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Real Time Interval\n");
+    return false;
+  }
+
+  if (seconds == 0 || seconds > 3600) {
+    LOGE("EEPROM: Invalid Real Time Interval (must be 1-3600 seconds)\n");
+    return false;
+  }
+
+  // Guardar en EEPROM
+  size_t written = prefs_.putUShort(kKeyRTInterval, seconds);
+  if (written == 0) {
+    LOGE("EEPROM: Failed to write Real Time Interval\n");
+    return false;
+  }
+
+  LOGI("EEPROM: Real Time Interval updated: %u sec\n", seconds);
+  return true;
+}
+
 void EepromManager::resetToDefaults() {
   if (!initialized_) {
     LOGE("EEPROM: Not initialized, cannot reset\n");
@@ -187,4 +233,5 @@ void EepromManager::resetToDefaults() {
   setMasterWebServiceURL(kDefaultMasterUrl);
   setClientWebServiceURL(kDefaultClientUrl);
   setFirmwareVersion(kDefaultFirmwareVer);
+  setRealTimeIntervalSec(kDefaultRTInterval);
 }

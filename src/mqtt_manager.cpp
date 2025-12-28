@@ -8,6 +8,9 @@
 #include "eeprom_manager.hpp"
 #include "rtc_manager.hpp"
 
+// Forward declarations de funciones de control de Real Time
+extern void startRealTimeMode(uint32_t durationSeconds);
+
 namespace {
 constexpr char kMqttClientIdPrefix[] = "pump-monitor";
 }
@@ -21,6 +24,7 @@ MqttManager::MqttManager() : client_(secureClient_) {}
 
 void MqttManager::begin() {
   secureClient_.setCACert(kMqttCaCert);
+  client_.setBufferSize(kMqttMaxPacketSize);  // DEBE ser antes de setServer
   client_.setServer(kMqttBrokerHost, kMqttBrokerPort);
   client_.setKeepAlive(kMqttKeepAliveSec);
   client_.setCallback(messageCallback);
@@ -60,6 +64,25 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to update Firmware Version\n");
     }
   }
+  // Procesar topic realTimeIntervalSec (actualizar)
+  else if (strstr(topic, "/realTimeIntervalSec") != nullptr) {
+    uint16_t interval = atoi(msg);
+    if (eeprom.setRealTimeIntervalSec(interval)) {
+      LOGI("MQTT: Real Time Interval updated via MQTT\n");
+    } else {
+      LOGE("MQTT: Failed to update Real Time Interval\n");
+    }
+  }
+  // Procesar startRealTime: activar modo Real Time por X segundos
+  else if (strstr(topic, "/startRealTime") != nullptr) {
+    uint32_t durationSeconds = atoi(msg);
+    if (durationSeconds > 0 && durationSeconds <= 3600) {
+      startRealTimeMode(durationSeconds);
+      LOGI("MQTT: Real Time Mode activated for %lu seconds\n", durationSeconds);
+    } else {
+      LOGE("MQTT: Invalid Real Time duration (1-3600 seconds required)\n");
+    }
+  }
   // Procesar solicitudes de lectura de variables: device/{MAC}/getValue con variable en payload
   else if (strstr(topic, "/getValue") != nullptr && strstr(topic, "/getValues") == nullptr) {
     // El payload contiene el nombre de la variable
@@ -90,6 +113,10 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       value = eeprom.getFirmwareVersion();
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/firmwareVersion", macNoColon);
     }
+    else if (strcmp(varName, "realTimeIntervalSec") == 0) {
+      value = String(eeprom.getRealTimeIntervalSec());
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/realTimeIntervalSec", macNoColon);
+    }
     else {
       LOGW("MQTT: Unknown variable requested: %s\n", varName);
       return;
@@ -118,10 +145,11 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     // Construir JSON con todas las variables
     char jsonBuffer[512];
     snprintf(jsonBuffer, sizeof(jsonBuffer),
-             "{\"masterWebService\":\"%s\",\"clientWebService\":\"%s\",\"firmwareVersion\":\"%s\"}",
+             "{\"masterWebService\":\"%s\",\"clientWebService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u}",
              eeprom.getMasterWebServiceURL().c_str(),
              eeprom.getClientWebServiceURL().c_str(),
-             eeprom.getFirmwareVersion().c_str());
+             eeprom.getFirmwareVersion().c_str(),
+             eeprom.getRealTimeIntervalSec());
     
     // Publicar todas las variables en un solo mensaje
     char responseTopic[64];

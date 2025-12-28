@@ -37,10 +37,11 @@ constexpr uint16_t kMqttKeepAliveSec = 60;
 constexpr uint32_t kMqttReconnectDelayMs = 3000;
 constexpr const char *kMqttUsername = "";
 constexpr const char *kMqttPassword = "";
-constexpr uint32_t kMqttTaskStackWords = 8192;  // aumenta para evitar canary en TLS/PubSub
+constexpr uint32_t kMqttTaskStackWords = 12288;  // aumentado para buffer MQTT 1024 + TLS
 constexpr UBaseType_t kMqttTaskPriority = 2;
 constexpr BaseType_t kMqttTaskCore = PRO_CPU_NUM;  // Core 0
 constexpr uint32_t kMqttLoopDelayMs = 200;
+constexpr uint16_t kMqttMaxPacketSize = 1024;  // Aumentado de 256 default para Real Time mode
 
 // Modbus TCP
 enum class ModbusRegisterType : uint8_t {
@@ -67,7 +68,7 @@ constexpr size_t kModbusDeviceCount = sizeof(kModbusDevices) / sizeof(kModbusDev
 
 constexpr uint16_t kModbusChunkSize = 60;  // Leer hasta 60 registros por chunk (max 120 regs totales)
 constexpr uint32_t kModbusChunkDelayMs = 300;  // Delay aumentado para chunks más grandes
-constexpr uint32_t kModbusReadPeriodMs = 4000;
+constexpr uint32_t kModbusReadPeriodMs = 10000;
 constexpr uint32_t kModbusInterDeviceDelayMs = 500;  // Delay entre dispositivos
 constexpr uint32_t kModbusTaskStackWords = 10240;  // Stack para manejar hasta 120 registros por dispositivo
 constexpr UBaseType_t kModbusTaskPriority = 1;
