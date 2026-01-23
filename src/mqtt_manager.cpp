@@ -2,13 +2,13 @@
 
 #include <Arduino.h>
 #include <cstring>
-#include <HTTPClient.h>
 
 #include "log.hpp"
 #include "network_manager.hpp"
 #include "eeprom_manager.hpp"
 #include "rtc_manager.hpp"
 #include "app_config.hpp"
+#include "ota_manager.hpp"
 
 // Forward declarations de funciones de control de Real Time
 extern void startRealTimeMode(uint32_t durationSeconds);
@@ -334,28 +334,6 @@ void MqttManager::processPendingFirmwareUpdate() {
   // Esperar un poco para que se libere memoria
   delay(500);
   
-  // Construir URL del endpoint usando la constante fija
-  String firmwareUrl = String(kFirmwareBaseUrl) + "/api/Firmware/InstallFirmware/" + pendingFirmwareVersion_;
-  
-  LOGI("MQTT: Requesting firmware from: %s\n", firmwareUrl.c_str());
-  
-  // Hacer GET al endpoint
-  HTTPClient http;
-  http.begin(firmwareUrl);
-  http.setTimeout(30000);  // 30 segundos timeout
-  
-  int httpCode = http.GET();
-  
-  if (httpCode > 0) {
-    if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED) {
-      String response = http.getString();
-      LOGI("MQTT: Firmware endpoint response (%d): %s\n", httpCode, response.c_str());
-    } else {
-      LOGE("MQTT: Firmware endpoint returned HTTP %d\n", httpCode);
-    }
-  } else {
-    LOGE("MQTT: Firmware request failed, error: %s\n", http.errorToString(httpCode).c_str());
-  }
-  
-  http.end();
+  // Delegar al OtaManager
+  OtaManager::instance().performUpdate(pendingFirmwareVersion_);
 }

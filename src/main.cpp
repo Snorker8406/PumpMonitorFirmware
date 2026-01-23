@@ -7,6 +7,7 @@
 #include "rtc_manager.hpp"
 #include "sd_manager.hpp"
 #include "eeprom_manager.hpp"
+#include "ota_manager.hpp"
 #include "log.hpp"
 
 // Forward declarations para funciones de control de Real Time
@@ -389,6 +390,16 @@ void setup() {
       kModbusTaskPriority - 1,  // Prioridad menor que modbus-task
       &realTimeModbusTaskHandle,
       kModbusTaskCore);
+
+  // Registrar tareas con OtaManager para suspenderlas durante actualizaciones
+  // No incluimos mqttTaskHandle porque esa tarea maneja el OTA
+  TaskHandle_t tasksToSuspend[] = {
+    networkTaskHandle,
+    modbusTaskHandle,
+    sdTaskHandle,
+    realTimeModbusTaskHandle
+  };
+  OtaManager::instance().registerTasks(tasksToSuspend, sizeof(tasksToSuspend) / sizeof(tasksToSuspend[0]));
 }
 
 void loop() {

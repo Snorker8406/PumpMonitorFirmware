@@ -12,8 +12,10 @@ constexpr char kDeviceHostname[] = "pump-monitor";
 // Firmware Version (fija en código)
 constexpr const char* kFirmwareVersion = "DEV.00";
 
-// Firmware OTA Base URL
+// Firmware OTA Configuration
 constexpr const char* kFirmwareBaseUrl = "https://pumpmonitor.agrotecsa.com.mx";
+constexpr const char* kFirmwareEndpointPath = "/api/Firmware/InstallFirmware/";
+constexpr uint32_t kOtaTimeoutMs = 30000;  // Timeout para conexión y respuesta
 
 // WT32-ETH01 / LAN8720 wiring
 constexpr int kEthAddr = 1;
