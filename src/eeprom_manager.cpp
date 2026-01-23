@@ -20,46 +20,18 @@ void EepromManager::begin() {
   initialized_ = true;
   LOGI("EEPROM: Initialized\n");
 
-  // Verificar si existe Master URL en EEPROM
-  String currentMasterUrl = prefs_.getString(kKeyMasterUrl, "");
+  // Verificar si existe URL en EEPROM
+  String currentUrl = prefs_.getString(kKeyUrl, "");
   
-  if (currentMasterUrl.isEmpty()) {
+  if (currentUrl.isEmpty()) {
     // Primera vez o EEPROM vacía - guardar URL por defecto
-    if (setMasterWebServiceURL(kDefaultMasterUrl)) {
-      LOGI("EEPROM: Master URL set to default: %s\n", kDefaultMasterUrl);
+    if (setWebServiceURL(kDefaultUrl)) {
+      LOGI("EEPROM: URL set to default: %s\n", kDefaultUrl);
     } else {
-      LOGE("EEPROM: Failed to set default Master URL\n");
+      LOGE("EEPROM: Failed to set default URL\n");
     }
   } else {
-    LOGI("EEPROM: Master URL loaded: %s\n", currentMasterUrl.c_str());
-  }
-  
-  // Verificar si existe Client URL en EEPROM
-  String currentClientUrl = prefs_.getString(kKeyClientUrl, "");
-  
-  if (currentClientUrl.isEmpty()) {
-    // Primera vez o EEPROM vacía - guardar URL por defecto
-    if (setClientWebServiceURL(kDefaultClientUrl)) {
-      LOGI("EEPROM: Client URL set to default: %s\n", kDefaultClientUrl);
-    } else {
-      LOGE("EEPROM: Failed to set default Client URL\n");
-    }
-  } else {
-    LOGI("EEPROM: Client URL loaded: %s\n", currentClientUrl.c_str());
-  }
-  
-  // Verificar si existe Firmware Version en EEPROM
-  String currentFwVer = prefs_.getString(kKeyFirmwareVer, "");
-  
-  if (currentFwVer.isEmpty()) {
-    // Primera vez o EEPROM vacía - guardar versión por defecto
-    if (setFirmwareVersion(kDefaultFirmwareVer)) {
-      LOGI("EEPROM: Firmware Version set to default: %s\n", kDefaultFirmwareVer);
-    } else {
-      LOGE("EEPROM: Failed to set default Firmware Version\n");
-    }
-  } else {
-    LOGI("EEPROM: Firmware Version loaded: %s\n", currentFwVer.c_str());
+    LOGI("EEPROM: URL loaded: %s\n", currentUrl.c_str());
   }
   
   // Verificar si existe Real Time Interval en EEPROM
@@ -75,19 +47,33 @@ void EepromManager::begin() {
   } else {
     LOGI("EEPROM: Real Time Interval loaded: %u sec\n", currentRTInterval);
   }
+  
+  // Verificar si existe Device ID en EEPROM
+  int32_t currentDeviceID = prefs_.getInt(kKeyDeviceID, -1);
+  
+  if (currentDeviceID == -1) {
+    // Primera vez o EEPROM vacía - guardar valor por defecto
+    if (setDeviceID(kDefaultDeviceID)) {
+      LOGI("EEPROM: Device ID set to default: %d\n", kDefaultDeviceID);
+    } else {
+      LOGE("EEPROM: Failed to set default Device ID\n");
+    }
+  } else {
+    LOGI("EEPROM: Device ID loaded: %d\n", currentDeviceID);
+  }
 }
 
-String EepromManager::getMasterWebServiceURL() {
+String EepromManager::getWebServiceURL() {
   if (!initialized_) {
     LOGW("EEPROM: Not initialized, returning default URL\n");
-    return String(kDefaultMasterUrl);
+    return String(kDefaultUrl);
   }
 
-  String url = prefs_.getString(kKeyMasterUrl, kDefaultMasterUrl);
+  String url = prefs_.getString(kKeyUrl, kDefaultUrl);
   return url;
 }
 
-bool EepromManager::setMasterWebServiceURL(const char* url) {
+bool EepromManager::setWebServiceURL(const char* url) {
   if (!initialized_) {
     LOGE("EEPROM: Not initialized, cannot set URL\n");
     return false;
@@ -104,87 +90,13 @@ bool EepromManager::setMasterWebServiceURL(const char* url) {
   }
 
   // Guardar en EEPROM
-  size_t written = prefs_.putString(kKeyMasterUrl, url);
+  size_t written = prefs_.putString(kKeyUrl, url);
   if (written == 0) {
-    LOGE("EEPROM: Failed to write Master URL\n");
+    LOGE("EEPROM: Failed to write URL\n");
     return false;
   }
 
-  LOGI("EEPROM: Master URL updated: %s\n", url);
-  return true;
-}
-
-String EepromManager::getClientWebServiceURL() {
-  if (!initialized_) {
-    LOGW("EEPROM: Not initialized, returning default Client URL\n");
-    return String(kDefaultClientUrl);
-  }
-
-  String url = prefs_.getString(kKeyClientUrl, kDefaultClientUrl);
-  return url;
-}
-
-bool EepromManager::setClientWebServiceURL(const char* url) {
-  if (!initialized_) {
-    LOGE("EEPROM: Not initialized, cannot set Client URL\n");
-    return false;
-  }
-
-  if (!url || strlen(url) == 0) {
-    LOGE("EEPROM: Invalid Client URL (empty)\n");
-    return false;
-  }
-
-  if (strlen(url) >= kMaxUrlLength) {
-    LOGE("EEPROM: Client URL too long (max %u chars)\n", kMaxUrlLength);
-    return false;
-  }
-
-  // Guardar en EEPROM
-  size_t written = prefs_.putString(kKeyClientUrl, url);
-  if (written == 0) {
-    LOGE("EEPROM: Failed to write Client URL\n");
-    return false;
-  }
-
-  LOGI("EEPROM: Client URL updated: %s\n", url);
-  return true;
-}
-
-String EepromManager::getFirmwareVersion() {
-  if (!initialized_) {
-    LOGW("EEPROM: Not initialized, returning default Firmware Version\n");
-    return String(kDefaultFirmwareVer);
-  }
-
-  String version = prefs_.getString(kKeyFirmwareVer, kDefaultFirmwareVer);
-  return version;
-}
-
-bool EepromManager::setFirmwareVersion(const char* version) {
-  if (!initialized_) {
-    LOGE("EEPROM: Not initialized, cannot set Firmware Version\n");
-    return false;
-  }
-
-  if (!version || strlen(version) == 0) {
-    LOGE("EEPROM: Invalid Firmware Version (empty)\n");
-    return false;
-  }
-
-  if (strlen(version) >= kMaxVersionLength) {
-    LOGE("EEPROM: Firmware Version too long (max %u chars)\n", kMaxVersionLength);
-    return false;
-  }
-
-  // Guardar en EEPROM
-  size_t written = prefs_.putString(kKeyFirmwareVer, version);
-  if (written == 0) {
-    LOGE("EEPROM: Failed to write Firmware Version\n");
-    return false;
-  }
-
-  LOGI("EEPROM: Firmware Version updated: %s\n", version);
+  LOGI("EEPROM: URL updated: %s\n", url);
   return true;
 }
 
@@ -220,6 +132,33 @@ bool EepromManager::setRealTimeIntervalSec(uint16_t seconds) {
   return true;
 }
 
+int32_t EepromManager::getDeviceID() {
+  if (!initialized_) {
+    LOGW("EEPROM: Not initialized, returning default Device ID\n");
+    return kDefaultDeviceID;
+  }
+
+  int32_t id = prefs_.getInt(kKeyDeviceID, kDefaultDeviceID);
+  return id;
+}
+
+bool EepromManager::setDeviceID(int32_t id) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Device ID\n");
+    return false;
+  }
+
+  // Guardar en EEPROM
+  size_t written = prefs_.putInt(kKeyDeviceID, id);
+  if (written == 0) {
+    LOGE("EEPROM: Failed to write Device ID\n");
+    return false;
+  }
+
+  LOGI("EEPROM: Device ID updated: %d\n", id);
+  return true;
+}
+
 void EepromManager::resetToDefaults() {
   if (!initialized_) {
     LOGE("EEPROM: Not initialized, cannot reset\n");
@@ -230,8 +169,7 @@ void EepromManager::resetToDefaults() {
   LOGW("EEPROM: All settings cleared\n");
   
   // Restablecer valores por defecto
-  setMasterWebServiceURL(kDefaultMasterUrl);
-  setClientWebServiceURL(kDefaultClientUrl);
-  setFirmwareVersion(kDefaultFirmwareVer);
+  setWebServiceURL(kDefaultUrl);
   setRealTimeIntervalSec(kDefaultRTInterval);
+  setDeviceID(kDefaultDeviceID);
 }

@@ -9,6 +9,12 @@
 
 constexpr char kDeviceHostname[] = "pump-monitor";
 
+// Firmware Version (fija en código)
+constexpr const char* kFirmwareVersion = "DEV.00";
+
+// Firmware OTA Base URL
+constexpr const char* kFirmwareBaseUrl = "https://pumpmonitor.agrotecsa.com.mx";
+
 // WT32-ETH01 / LAN8720 wiring
 constexpr int kEthAddr = 1;
 constexpr int kEthPowerPin = 16;

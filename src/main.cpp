@@ -101,6 +101,14 @@ void mqttTask(void *) {
   mqtt.begin();
 
   for (;;) {
+    // Verificar si hay actualización de firmware pendiente (fuera del callback)
+    if (mqtt.hasPendingFirmwareUpdate()) {
+      mqtt.processPendingFirmwareUpdate();
+      // Después del OTA, el dispositivo se reiniciará o continuará
+      vTaskDelay(pdMS_TO_TICKS(5000));
+      continue;
+    }
+    
     if (net.isConnected()) {
       mqtt.ensureConnected();
       mqtt.loop();
@@ -316,9 +324,11 @@ void setup() {
   
   // Inicializar EEPROM
   EepromManager::instance().begin();
-  LOGI("Master URL: %s\n", EepromManager::instance().getMasterWebServiceURL().c_str());
-  LOGI("Client URL: %s\n", EepromManager::instance().getClientWebServiceURL().c_str());
-  LOGI("Firmware Version: %s\n", EepromManager::instance().getFirmwareVersion().c_str());
+  
+  // Obtener valores en variables locales antes de imprimir
+  String webServiceUrl = EepromManager::instance().getWebServiceURL();
+  LOGI("Web Service URL: %s\n", webServiceUrl.c_str());
+  LOGI("Firmware Version: %s\n", kFirmwareVersion);
   
   // Inicializar RTC primero
   const bool rtcOk = RtcManager::instance().begin();

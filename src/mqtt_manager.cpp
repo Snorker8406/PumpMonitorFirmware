@@ -2,11 +2,13 @@
 
 #include <Arduino.h>
 #include <cstring>
+#include <HTTPClient.h>
 
 #include "log.hpp"
 #include "network_manager.hpp"
 #include "eeprom_manager.hpp"
 #include "rtc_manager.hpp"
+#include "app_config.hpp"
 
 // Forward declarations de funciones de control de Real Time
 extern void startRealTimeMode(uint32_t durationSeconds);
@@ -40,28 +42,12 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
   
   auto &eeprom = EepromManager::instance();
   
-  // Procesar topic masterWebService (actualizar)
-  if (strstr(topic, "/masterWebService") != nullptr) {
-    if (eeprom.setMasterWebServiceURL(msg)) {
-      LOGI("MQTT: Master URL updated via MQTT\n");
+  // Procesar topic webService (actualizar)
+  if (strstr(topic, "/webService") != nullptr) {
+    if (eeprom.setWebServiceURL(msg)) {
+      LOGI("MQTT: URL updated via MQTT\n");
     } else {
-      LOGE("MQTT: Failed to update Master URL\n");
-    }
-  }
-  // Procesar topic clientWebService (actualizar)
-  else if (strstr(topic, "/clientWebService") != nullptr) {
-    if (eeprom.setClientWebServiceURL(msg)) {
-      LOGI("MQTT: Client URL updated via MQTT\n");
-    } else {
-      LOGE("MQTT: Failed to update Client URL\n");
-    }
-  }
-  // Procesar topic firmwareVersion (actualizar)
-  else if (strstr(topic, "/firmwareVersion") != nullptr) {
-    if (eeprom.setFirmwareVersion(msg)) {
-      LOGI("MQTT: Firmware Version updated via MQTT\n");
-    } else {
-      LOGE("MQTT: Failed to update Firmware Version\n");
+      LOGE("MQTT: Failed to update URL\n");
     }
   }
   // Procesar topic realTimeIntervalSec (actualizar)
@@ -73,6 +59,15 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to update Real Time Interval\n");
     }
   }
+  // Procesar topic deviceId (actualizar)
+  else if (strstr(topic, "/deviceId") != nullptr) {
+    int32_t deviceId = atoi(msg);
+    if (eeprom.setDeviceID(deviceId)) {
+      LOGI("MQTT: Device ID updated via MQTT\n");
+    } else {
+      LOGE("MQTT: Failed to update Device ID\n");
+    }
+  }
   // Procesar startRealTime: activar modo Real Time por X segundos
   else if (strstr(topic, "/startRealTime") != nullptr) {
     uint32_t durationSeconds = atoi(msg);
@@ -82,6 +77,17 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     } else {
       LOGE("MQTT: Invalid Real Time duration (1-3600 seconds required)\n");
     }
+  }
+  // Procesar installFirmware: marcar para actualizar firmware (se procesa fuera del callback)
+  else if (strstr(topic, "/installFirmware") != nullptr) {
+    // El payload contiene la versión a instalar
+    if (strlen(msg) == 0 || strlen(msg) >= 32) {
+      LOGE("MQTT: Invalid firmware version\n");
+      return;
+    }
+    
+    LOGI("MQTT: Firmware install requested, version: %s\n", msg);
+    MqttManager::instance().requestFirmwareUpdate(msg);
   }
   // Procesar solicitudes de lectura de variables: device/{MAC}/getValue con variable en payload
   else if (strstr(topic, "/getValue") != nullptr && strstr(topic, "/getValues") == nullptr) {
@@ -101,21 +107,21 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     char responseTopic[64];
     String value;
     
-    if (strcmp(varName, "masterWebService") == 0) {
-      value = eeprom.getMasterWebServiceURL();
-      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/masterWebService", macNoColon);
-    }
-    else if (strcmp(varName, "clientWebService") == 0) {
-      value = eeprom.getClientWebServiceURL();
-      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/clientWebService", macNoColon);
+    if (strcmp(varName, "webService") == 0) {
+      value = eeprom.getWebServiceURL();
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/webService", macNoColon);
     }
     else if (strcmp(varName, "firmwareVersion") == 0) {
-      value = eeprom.getFirmwareVersion();
+      value = String(kFirmwareVersion);
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/firmwareVersion", macNoColon);
     }
     else if (strcmp(varName, "realTimeIntervalSec") == 0) {
       value = String(eeprom.getRealTimeIntervalSec());
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/realTimeIntervalSec", macNoColon);
+    }
+    else if (strcmp(varName, "deviceId") == 0) {
+      value = String(eeprom.getDeviceID());
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/deviceId", macNoColon);
     }
     else {
       LOGW("MQTT: Unknown variable requested: %s\n", varName);
@@ -142,14 +148,19 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       }
     }
     
+    // Obtener valores primero para evitar problemas con temporales
+    String webServiceUrl = eeprom.getWebServiceURL();
+    uint16_t rtInterval = eeprom.getRealTimeIntervalSec();
+    int32_t deviceId = eeprom.getDeviceID();
+    
     // Construir JSON con todas las variables
     char jsonBuffer[512];
     snprintf(jsonBuffer, sizeof(jsonBuffer),
-             "{\"masterWebService\":\"%s\",\"clientWebService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u}",
-             eeprom.getMasterWebServiceURL().c_str(),
-             eeprom.getClientWebServiceURL().c_str(),
-             eeprom.getFirmwareVersion().c_str(),
-             eeprom.getRealTimeIntervalSec());
+             "{\"webService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u,\"deviceId\":%d}",
+             webServiceUrl.c_str(),
+             kFirmwareVersion,
+             rtInterval,
+             deviceId);
     
     // Publicar todas las variables en un solo mensaje
     char responseTopic[64];
@@ -298,4 +309,53 @@ bool MqttManager::publish(const char* topic, const char* payload) {
   }
   
   return client_.publish(topic, payload);
+}
+
+void MqttManager::requestFirmwareUpdate(const char* version) {
+  strncpy(pendingFirmwareVersion_, version, sizeof(pendingFirmwareVersion_) - 1);
+  pendingFirmwareVersion_[sizeof(pendingFirmwareVersion_) - 1] = '\0';
+  firmwareUpdatePending_ = true;
+  LOGI("MQTT: Firmware update queued for version: %s\n", pendingFirmwareVersion_);
+}
+
+void MqttManager::processPendingFirmwareUpdate() {
+  if (!firmwareUpdatePending_) {
+    return;
+  }
+  
+  firmwareUpdatePending_ = false;
+  
+  LOGI("MQTT: Processing firmware update for version: %s\n", pendingFirmwareVersion_);
+  
+  // Desconectar MQTT para liberar memoria
+  disconnect();
+  LOGI("MQTT: Disconnected to free memory for OTA\n");
+  
+  // Esperar un poco para que se libere memoria
+  delay(500);
+  
+  // Construir URL del endpoint usando la constante fija
+  String firmwareUrl = String(kFirmwareBaseUrl) + "/api/Firmware/InstallFirmware/" + pendingFirmwareVersion_;
+  
+  LOGI("MQTT: Requesting firmware from: %s\n", firmwareUrl.c_str());
+  
+  // Hacer GET al endpoint
+  HTTPClient http;
+  http.begin(firmwareUrl);
+  http.setTimeout(30000);  // 30 segundos timeout
+  
+  int httpCode = http.GET();
+  
+  if (httpCode > 0) {
+    if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_CREATED) {
+      String response = http.getString();
+      LOGI("MQTT: Firmware endpoint response (%d): %s\n", httpCode, response.c_str());
+    } else {
+      LOGE("MQTT: Firmware endpoint returned HTTP %d\n", httpCode);
+    }
+  } else {
+    LOGE("MQTT: Firmware request failed, error: %s\n", http.errorToString(httpCode).c_str());
+  }
+  
+  http.end();
 }

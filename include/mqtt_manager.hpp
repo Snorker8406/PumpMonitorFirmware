@@ -15,6 +15,11 @@ class MqttManager {
   void disconnect();
   bool isConnected();
   bool publish(const char* topic, const char* payload);
+  
+  // Firmware update
+  void requestFirmwareUpdate(const char* version);
+  void processPendingFirmwareUpdate();
+  bool hasPendingFirmwareUpdate() const { return firmwareUpdatePending_; }
 
  private:
   MqttManager();
@@ -24,4 +29,8 @@ class MqttManager {
   WiFiClientSecure secureClient_;
   PubSubClient client_;
   unsigned long lastReconnectAttemptMs_ = 0;
+  
+  // Firmware update state
+  volatile bool firmwareUpdatePending_ = false;
+  char pendingFirmwareVersion_[32] = {0};
 };
