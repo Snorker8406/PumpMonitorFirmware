@@ -63,14 +63,15 @@ struct ModbusDeviceConfig {
   uint16_t startReg;
   uint16_t totalRegs;       // Debe ser par (2 regs por float)
   ModbusRegisterType regType;
-  const char* modbusModelId;  // Identificador del modelo Modbus
+  uint8_t modbusModelId;        // ID numérico del modelo Modbus
+  const char* modbusModelName;  // Nombre descriptivo del modelo Modbus
 };
 
 // Lista de dispositivos Modbus a leer (hasta 120 registros por dispositivo)
 static const ModbusDeviceConfig kModbusDevices[] = {
-  {IPAddress(192, 168, 1, 11), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, "Device_1"},
-  {IPAddress(192, 168, 1, 10), 1, 0, 20, ModbusRegisterType::HOLDING_REGISTER, "Device_2"},
-  // Ejemplo con más registros: {IPAddress(192, 168, 1, 12), 1, 0, 120, ModbusRegisterType::HOLDING_REGISTER, "Device_3"},
+  {IPAddress(192, 168, 1, 11), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, 1, "Device_1"},
+  {IPAddress(192, 168, 1, 10), 1, 0, 20, ModbusRegisterType::HOLDING_REGISTER, 2, "Device_2"},
+  // Ejemplo con más registros: {IPAddress(192, 168, 1, 12), 1, 0, 120, ModbusRegisterType::HOLDING_REGISTER, 3, "Device_3"},
 };
 constexpr size_t kModbusDeviceCount = sizeof(kModbusDevices) / sizeof(kModbusDevices[0]);
 

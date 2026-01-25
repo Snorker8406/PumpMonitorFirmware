@@ -145,12 +145,12 @@ void modbusTask(void *) {
           // Mostrar datos en consola
           for (const auto &device : devicesData) {
             if (device.success) {
-              LOGI("[%s] Data: ", device.modbusModelId);
+              LOGI("[%s] Data: ", device.modbusModelName);
               for (size_t i = 0; i < device.values.size(); i++) {
                 Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
               }
             } else {
-              LOGE("Modbus %s read failed, no data available\n", device.modbusModelId);
+              LOGE("Modbus %s read failed, no data available\n", device.modbusModelName);
             }
           }
         } else {
@@ -214,7 +214,7 @@ void realTimeModbusTask(void *) {
           if (device.success && !device.rawData.empty()) {
             // Construir mensaje: modbusModelId,HEXDATA
             char msgBuffer[512];
-            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%s,", device.modbusModelId);
+            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%u,", device.modbusModelId);
             
             // Agregar datos hexadecimales
             for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
@@ -223,13 +223,13 @@ void realTimeModbusTask(void *) {
             
             // Log de diagnóstico
             size_t msgLen = strlen(msgBuffer);
-            LOGI("RT: %s message size: %u bytes (%u regs)\n", device.modbusModelId, msgLen, device.rawData.size());
+            LOGI("RT: %s message size: %u bytes (%u regs)\n", device.modbusModelName, msgLen, device.rawData.size());
             
             // Publicar
             if (mqtt.publish(realTimeTopic, msgBuffer)) {
-              LOGI("RT: Published %s\n", device.modbusModelId);
+              LOGI("RT: Published %s\n", device.modbusModelName);
             } else {
-              LOGE("RT: Failed to publish %s (size: %u bytes)\n", device.modbusModelId, msgLen);
+              LOGE("RT: Failed to publish %s (size: %u bytes)\n", device.modbusModelName, msgLen);
             }
             
             // Esperar entre dispositivos
@@ -341,7 +341,7 @@ void instantValuesTask(void *) {
             if (device.success && !device.rawData.empty()) {
               // Construir mensaje: {deviceId},{modbusModelId},{rawData}
               char msgBuffer[512];
-              int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%d,%s,", deviceId, device.modbusModelId);
+              int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%d,%u,", deviceId, device.modbusModelId);
               
               // Agregar datos hexadecimales
               for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
@@ -350,15 +350,16 @@ void instantValuesTask(void *) {
               
               // Publicar por MQTT
               if (mqtt.publish(instValTopic, msgBuffer)) {
-                LOGD("IV: Published %s\n", device.modbusModelId);
+                LOGD("IV: Published %s\n", device.modbusModelName);
               } else {
-                LOGE("IV: Failed to publish %s\n", device.modbusModelId);
+                LOGE("IV: Failed to publish %s\n", device.modbusModelName);
               }
               
               // Preparar registro para SD
               SensorDataRecord record;
               record.timestamp = timestamp;
               record.modbusModelId = device.modbusModelId;
+              record.modbusModelName = device.modbusModelName;
               record.deviceIp = device.ip;
               record.values = device.values;
               record.rawData = device.rawData;
