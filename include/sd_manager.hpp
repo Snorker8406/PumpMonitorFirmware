@@ -9,7 +9,7 @@
 
 struct SensorDataRecord {
   unsigned long timestamp;
-  const char* deviceName;
+  const char* modbusModelId;  // Identificador del modelo Modbus
   IPAddress deviceIp;
   std::vector<float> values;
   std::vector<uint16_t> rawData;  // Datos hexadecimales crudos

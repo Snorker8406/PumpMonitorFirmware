@@ -101,14 +101,14 @@ bool ModbusManager::readAllDevices(std::vector<ModbusDeviceData> &devicesData) {
   for (size_t i = 0; i < kModbusDeviceCount; i++) {
     const auto &config = kModbusDevices[i];
     ModbusDeviceData data;
-    data.name = config.name;
+    data.modbusModelId = config.modbusModelId;
     data.ip = config.ip;
     data.success = readDevice(config.ip, config.unitId, config.startReg, config.totalRegs, 
                               config.regType, data.values, &data.rawData);
     
     if (!data.success) {
       allSuccess = false;
-      LOGE("Failed to read %s (%u.%u.%u.%u)\n", config.name, config.ip[0], config.ip[1], config.ip[2], config.ip[3]);
+      LOGE("Failed to read %s (%u.%u.%u.%u)\n", config.modbusModelId, config.ip[0], config.ip[1], config.ip[2], config.ip[3]);
     }
     
     devicesData.push_back(data);

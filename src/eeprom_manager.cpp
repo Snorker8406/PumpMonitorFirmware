@@ -48,6 +48,20 @@ void EepromManager::begin() {
     LOGI("EEPROM: Real Time Interval loaded: %u sec\n", currentRTInterval);
   }
   
+  // Verificar si existe Instant Values Interval en EEPROM
+  uint16_t currentIVInterval = prefs_.getUShort(kKeyIVInterval, 0);
+  
+  if (currentIVInterval == 0) {
+    // Primera vez o EEPROM vacía - guardar intervalo por defecto
+    if (setInstantValuesIntervalSec(kDefaultIVInterval)) {
+      LOGI("EEPROM: Instant Values Interval set to default: %u sec\n", kDefaultIVInterval);
+    } else {
+      LOGE("EEPROM: Failed to set default Instant Values Interval\n");
+    }
+  } else {
+    LOGI("EEPROM: Instant Values Interval loaded: %u sec\n", currentIVInterval);
+  }
+  
   // Verificar si existe Device ID en EEPROM
   int32_t currentDeviceID = prefs_.getInt(kKeyDeviceID, -1);
   
@@ -132,6 +146,38 @@ bool EepromManager::setRealTimeIntervalSec(uint16_t seconds) {
   return true;
 }
 
+uint16_t EepromManager::getInstantValuesIntervalSec() {
+  if (!initialized_) {
+    LOGW("EEPROM: Not initialized, returning default Instant Values Interval\n");
+    return kDefaultIVInterval;
+  }
+
+  uint16_t interval = prefs_.getUShort(kKeyIVInterval, kDefaultIVInterval);
+  return interval;
+}
+
+bool EepromManager::setInstantValuesIntervalSec(uint16_t seconds) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Instant Values Interval\n");
+    return false;
+  }
+
+  if (seconds == 0 || seconds > 3600) {
+    LOGE("EEPROM: Invalid Instant Values Interval (must be 1-3600 seconds)\n");
+    return false;
+  }
+
+  // Guardar en EEPROM
+  size_t written = prefs_.putUShort(kKeyIVInterval, seconds);
+  if (written == 0) {
+    LOGE("EEPROM: Failed to write Instant Values Interval\n");
+    return false;
+  }
+
+  LOGI("EEPROM: Instant Values Interval updated: %u sec\n", seconds);
+  return true;
+}
+
 int32_t EepromManager::getDeviceID() {
   if (!initialized_) {
     LOGW("EEPROM: Not initialized, returning default Device ID\n");
@@ -171,5 +217,6 @@ void EepromManager::resetToDefaults() {
   // Restablecer valores por defecto
   setWebServiceURL(kDefaultUrl);
   setRealTimeIntervalSec(kDefaultRTInterval);
+  setInstantValuesIntervalSec(kDefaultIVInterval);
   setDeviceID(kDefaultDeviceID);
 }

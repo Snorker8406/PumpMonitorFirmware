@@ -59,6 +59,15 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to update Real Time Interval\n");
     }
   }
+  // Procesar topic instantValuesIntervalSec (actualizar)
+  else if (strstr(topic, "/instantValuesIntervalSec") != nullptr) {
+    uint16_t interval = atoi(msg);
+    if (eeprom.setInstantValuesIntervalSec(interval)) {
+      LOGI("MQTT: Instant Values Interval updated via MQTT\n");
+    } else {
+      LOGE("MQTT: Failed to update Instant Values Interval\n");
+    }
+  }
   // Procesar topic deviceId (actualizar)
   else if (strstr(topic, "/deviceId") != nullptr) {
     int32_t deviceId = atoi(msg);
@@ -119,6 +128,10 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       value = String(eeprom.getRealTimeIntervalSec());
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/realTimeIntervalSec", macNoColon);
     }
+    else if (strcmp(varName, "instantValuesIntervalSec") == 0) {
+      value = String(eeprom.getInstantValuesIntervalSec());
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/instantValuesIntervalSec", macNoColon);
+    }
     else if (strcmp(varName, "deviceId") == 0) {
       value = String(eeprom.getDeviceID());
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/deviceId", macNoColon);
@@ -151,15 +164,17 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     // Obtener valores primero para evitar problemas con temporales
     String webServiceUrl = eeprom.getWebServiceURL();
     uint16_t rtInterval = eeprom.getRealTimeIntervalSec();
+    uint16_t ivInterval = eeprom.getInstantValuesIntervalSec();
     int32_t deviceId = eeprom.getDeviceID();
     
     // Construir JSON con todas las variables
     char jsonBuffer[512];
     snprintf(jsonBuffer, sizeof(jsonBuffer),
-             "{\"webService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u,\"deviceId\":%d}",
+             "{\"webService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u,\"instantValuesIntervalSec\":%u,\"deviceId\":%d}",
              webServiceUrl.c_str(),
              kFirmwareVersion,
              rtInterval,
+             ivInterval,
              deviceId);
     
     // Publicar todas las variables en un solo mensaje

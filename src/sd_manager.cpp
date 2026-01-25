@@ -122,8 +122,8 @@ bool SdManager::writeDataRecord(const SensorDataRecord &record) {
     return false;
   }
 
-  // Formato: {timestamp},{device_name},{hexadecimales}
-  file.printf("%lu,%s,", record.timestamp, record.deviceName);
+  // Formato: {timestamp},{modbusModelId},{hexadecimales}
+  file.printf("%lu,%s,", record.timestamp, record.modbusModelId);
 
   // Escribir datos hexadecimales
   for (size_t i = 0; i < record.rawData.size(); i++) {
@@ -149,9 +149,9 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
     return false;
   }
 
-  // Escribir todos los registros en formato: {timestamp},{device_name},{hexadecimales}
+  // Escribir todos los registros en formato: {timestamp},{modbusModelId},{hexadecimales}
   for (const auto &record : records) {
-    file.printf("%lu,%s,", record.timestamp, record.deviceName);
+    file.printf("%lu,%s,", record.timestamp, record.modbusModelId);
 
     // Escribir datos hexadecimales
     for (size_t i = 0; i < record.rawData.size(); i++) {

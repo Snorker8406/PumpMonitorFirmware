@@ -17,6 +17,10 @@ class EepromManager {
   uint16_t getRealTimeIntervalSec();
   bool setRealTimeIntervalSec(uint16_t seconds);
   
+  // Instant Values Interval (seconds)
+  uint16_t getInstantValuesIntervalSec();
+  bool setInstantValuesIntervalSec(uint16_t seconds);
+  
   // Device ID
   int32_t getDeviceID();
   bool setDeviceID(int32_t id);
@@ -33,9 +37,11 @@ class EepromManager {
   static constexpr const char* kNamespace = "pumpmon";
   static constexpr const char* kKeyUrl = "webUrl";
   static constexpr const char* kKeyRTInterval = "rtInterval";
+  static constexpr const char* kKeyIVInterval = "ivInterval";
   static constexpr const char* kKeyDeviceID = "deviceId";
   static constexpr const char* kDefaultUrl = "https://pumpmonitor.agrotecsa.com.mx/";
   static constexpr uint16_t kDefaultRTInterval = 3;
+  static constexpr uint16_t kDefaultIVInterval = 60;  // 1 minuto por defecto
   static constexpr int32_t kDefaultDeviceID = 1;
   static constexpr size_t kMaxUrlLength = 128;
 };

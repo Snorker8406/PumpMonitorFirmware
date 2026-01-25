@@ -63,6 +63,7 @@ TaskHandle_t mqttTaskHandle = nullptr;
 TaskHandle_t modbusTaskHandle = nullptr;
 TaskHandle_t sdTaskHandle = nullptr;
 TaskHandle_t realTimeModbusTaskHandle = nullptr;
+TaskHandle_t instantValuesTaskHandle = nullptr;
 
 // Mutex para sincronizar acceso a ModbusManager entre tareas
 SemaphoreHandle_t modbusMutex = nullptr;
@@ -126,13 +127,10 @@ void mqttTask(void *) {
 void modbusTask(void *) {
   auto &net = NetworkManager::instance();
   auto &modbus = ModbusManager::instance();
-  auto &sd = SdManager::instance();
   auto &rtc = RtcManager::instance();
   modbus.begin();
 
   std::vector<ModbusDeviceData> devicesData;
-  std::vector<SensorDataRecord> recordsBuffer;
-  recordsBuffer.reserve(kModbusDeviceCount);
 
   for (;;) {
     if (net.isConnected()) {
@@ -144,40 +142,17 @@ void modbusTask(void *) {
         xSemaphoreGive(modbusMutex);  // Liberar mutex
         
         if (readSuccess) {
-        recordsBuffer.clear();
-        unsigned long timestamp = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
-        
-        // Mostrar y preparar datos para SD
-        for (const auto &device : devicesData) {
-          if (device.success) {
-            LOGI("[%s] Data: ", device.name);
-            for (size_t i = 0; i < device.values.size(); i++) {
-              Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
+          // Mostrar datos en consola
+          for (const auto &device : devicesData) {
+            if (device.success) {
+              LOGI("[%s] Data: ", device.modbusModelId);
+              for (size_t i = 0; i < device.values.size(); i++) {
+                Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
+              }
+            } else {
+              LOGE("Modbus %s read failed, no data available\n", device.modbusModelId);
             }
-            
-            // Preparar registro para SD con datos raw hexadecimales
-            if (!device.rawData.empty()) {
-              SensorDataRecord record;
-              record.timestamp = timestamp;
-              record.deviceName = device.name;
-              record.deviceIp = device.ip;
-              record.values = device.values;
-              record.rawData = device.rawData;
-              recordsBuffer.push_back(record);
-            }
-          } else {
-            LOGE("Device %s read failed, no data available\n", device.name);
           }
-        }
-        
-        // Guardar en SD si está disponible
-        if (sd.isAvailable() && !recordsBuffer.empty()) {
-          if (sd.writeDataBatch(recordsBuffer)) {
-            LOGI("SD: %u records saved\n", recordsBuffer.size());
-          } else {
-            LOGE("SD: failed to write %u records\n", recordsBuffer.size());
-          }
-        }
         } else {
           LOGE("Modbus read failed for all devices\n");
         }
@@ -188,8 +163,6 @@ void modbusTask(void *) {
       // Liberar vectores y consolidar heap
       devicesData.clear();
       devicesData.shrink_to_fit();
-      recordsBuffer.clear();
-      recordsBuffer.shrink_to_fit();
       
       vTaskDelay(pdMS_TO_TICKS(kModbusReadPeriodMs));
     } else {
@@ -239,9 +212,9 @@ void realTimeModbusTask(void *) {
         if (readSuccess) {
         for (const auto &device : devicesData) {
           if (device.success && !device.rawData.empty()) {
-            // Construir mensaje: deviceName,HEXDATA
+            // Construir mensaje: modbusModelId,HEXDATA
             char msgBuffer[512];
-            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%s,", device.name);
+            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%s,", device.modbusModelId);
             
             // Agregar datos hexadecimales
             for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
@@ -250,13 +223,13 @@ void realTimeModbusTask(void *) {
             
             // Log de diagnóstico
             size_t msgLen = strlen(msgBuffer);
-            LOGI("RT: %s message size: %u bytes (%u regs)\n", device.name, msgLen, device.rawData.size());
+            LOGI("RT: %s message size: %u bytes (%u regs)\n", device.modbusModelId, msgLen, device.rawData.size());
             
             // Publicar
             if (mqtt.publish(realTimeTopic, msgBuffer)) {
-              LOGI("RT: Published %s\n", device.name);
+              LOGI("RT: Published %s\n", device.modbusModelId);
             } else {
-              LOGE("RT: Failed to publish %s (size: %u bytes)\n", device.name, msgLen);
+              LOGE("RT: Failed to publish %s (size: %u bytes)\n", device.modbusModelId, msgLen);
             }
             
             // Esperar entre dispositivos
@@ -311,6 +284,115 @@ void sdTask(void *) {
       // SD está disponible, solo esperar
       vTaskDelay(pdMS_TO_TICKS(30000));
     }
+  }
+}
+
+// ----- Instant Values task -----
+// Tarea para publicar datos Modbus periódicamente (siempre activa)
+
+void instantValuesTask(void *) {
+  auto &modbus = ModbusManager::instance();
+  auto &mqtt = MqttManager::instance();
+  auto &net = NetworkManager::instance();
+  auto &sd = SdManager::instance();
+  auto &rtc = RtcManager::instance();
+  
+  std::vector<SensorDataRecord> recordsBuffer;
+  recordsBuffer.reserve(kModbusDeviceCount);
+  
+  vTaskDelay(pdMS_TO_TICKS(10000));  // Esperar inicialización
+  
+  for (;;) {
+    // Obtener intervalo configurado
+    uint16_t intervalSec = EepromManager::instance().getInstantValuesIntervalSec();
+    
+    // Solo ejecutar si MQTT está conectado
+    if (mqtt.isConnected()) {
+      // Obtener MAC para construir topic
+      const char *macColoned = net.macString();
+      char macNoColon[13] = {0};
+      int idx = 0;
+      for (const char *p = macColoned; *p && idx < 12; ++p) {
+        if (*p != ':') {
+          macNoColon[idx++] = *p;
+        }
+      }
+      
+      char instValTopic[48];
+      snprintf(instValTopic, sizeof(instValTopic), "device/%s_instVal", macNoColon);
+      
+      // Obtener deviceId para incluir en los mensajes
+      int32_t deviceId = EepromManager::instance().getDeviceID();
+      
+      // Leer cada dispositivo Modbus y publicar
+      std::vector<ModbusDeviceData> devicesData;
+      devicesData.reserve(kModbusDeviceCount);
+      
+      // Adquirir mutex antes de acceder a Modbus
+      if (xSemaphoreTake(modbusMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+        bool readSuccess = modbus.readAllDevices(devicesData);
+        xSemaphoreGive(modbusMutex);  // Liberar mutex inmediatamente
+        
+        if (readSuccess) {
+          recordsBuffer.clear();
+          unsigned long timestamp = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
+          
+          for (const auto &device : devicesData) {
+            if (device.success && !device.rawData.empty()) {
+              // Construir mensaje: {deviceId},{modbusModelId},{rawData}
+              char msgBuffer[512];
+              int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%d,%s,", deviceId, device.modbusModelId);
+              
+              // Agregar datos hexadecimales
+              for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
+                offset += snprintf(msgBuffer + offset, sizeof(msgBuffer) - offset, "%04X", device.rawData[i]);
+              }
+              
+              // Publicar por MQTT
+              if (mqtt.publish(instValTopic, msgBuffer)) {
+                LOGD("IV: Published %s\n", device.modbusModelId);
+              } else {
+                LOGE("IV: Failed to publish %s\n", device.modbusModelId);
+              }
+              
+              // Preparar registro para SD
+              SensorDataRecord record;
+              record.timestamp = timestamp;
+              record.modbusModelId = device.modbusModelId;
+              record.deviceIp = device.ip;
+              record.values = device.values;
+              record.rawData = device.rawData;
+              recordsBuffer.push_back(record);
+              
+              // Esperar entre dispositivos
+              vTaskDelay(pdMS_TO_TICKS(kModbusInterDeviceDelayMs));
+            }
+          }
+          
+          // Guardar en SD si está disponible
+          if (sd.isAvailable() && !recordsBuffer.empty()) {
+            if (sd.writeDataBatch(recordsBuffer)) {
+              LOGI("SD: %u records saved\n", recordsBuffer.size());
+            } else {
+              LOGE("SD: failed to write %u records\n", recordsBuffer.size());
+            }
+          }
+          
+          // Liberar memoria
+          devicesData.clear();
+          devicesData.shrink_to_fit();
+          recordsBuffer.clear();
+          recordsBuffer.shrink_to_fit();
+        } else {
+          LOGE("IV: Modbus read failed\n");
+        }
+      } else {
+        LOGW("IV: Modbus mutex timeout\n");
+      }
+    }
+    
+    // Esperar intervalo configurado
+    vTaskDelay(pdMS_TO_TICKS(intervalSec * 1000));
   }
 }
 
@@ -391,13 +473,23 @@ void setup() {
       &realTimeModbusTaskHandle,
       kModbusTaskCore);
 
+  xTaskCreatePinnedToCore(
+      instantValuesTask,
+      "instval-task",
+      kModbusTaskStackWords,
+      nullptr,
+      kModbusTaskPriority - 1,  // Prioridad menor que modbus-task
+      &instantValuesTaskHandle,
+      kModbusTaskCore);
+
   // Registrar tareas con OtaManager para suspenderlas durante actualizaciones
   // No incluimos mqttTaskHandle porque esa tarea maneja el OTA
   TaskHandle_t tasksToSuspend[] = {
     networkTaskHandle,
     modbusTaskHandle,
     sdTaskHandle,
-    realTimeModbusTaskHandle
+    realTimeModbusTaskHandle,
+    instantValuesTaskHandle
   };
   OtaManager::instance().registerTasks(tasksToSuspend, sizeof(tasksToSuspend) / sizeof(tasksToSuspend[0]));
 }

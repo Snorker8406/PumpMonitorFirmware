@@ -63,7 +63,7 @@ struct ModbusDeviceConfig {
   uint16_t startReg;
   uint16_t totalRegs;       // Debe ser par (2 regs por float)
   ModbusRegisterType regType;
-  const char* name;
+  const char* modbusModelId;  // Identificador del modelo Modbus
 };
 
 // Lista de dispositivos Modbus a leer (hasta 120 registros por dispositivo)
