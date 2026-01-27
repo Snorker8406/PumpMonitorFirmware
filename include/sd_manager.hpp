@@ -37,11 +37,15 @@ class SdManager {
   uint64_t getUsedBytes() const;
   uint64_t getFreeBytes() const;
   sdcard_type_t getCardType() const;
+  
+  // Listar archivos de un directorio
+  String listFiles(int year, int month);
 
  private:
   SdManager() = default;
   bool ensureDirectoryExists(const char* path);
-  void generateFilename(char* buffer, size_t bufferSize) const;
+  bool ensureNestedDirectories(int year, int month);
+  void generateFilename(char* buffer, size_t bufferSize);
   void generateErrorFilename(char* buffer, size_t bufferSize) const;
   void getTimestamp(char* buffer, size_t bufferSize) const;
   

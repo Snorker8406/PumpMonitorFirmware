@@ -81,9 +81,37 @@ bool SdManager::ensureDirectoryExists(const char* path) {
   return SD.mkdir(path);
 }
 
-void SdManager::generateFilename(char* buffer, size_t bufferSize) const {
-  // Formato: /data/YYYYMMDD.csv usando RTC
+bool SdManager::ensureNestedDirectories(int year, int month) {
+  if (!initialized_) return false;
+  
+  // Crear carpeta del año: /data/YYYY
+  char yearPath[20];
+  snprintf(yearPath, sizeof(yearPath), "%s/%04d", kSdDataPath, year);
+  if (!SD.exists(yearPath)) {
+    if (!SD.mkdir(yearPath)) {
+      LOGE("Failed to create year directory: %s\n", yearPath);
+      return false;
+    }
+  }
+  
+  // Crear carpeta del mes: /data/YYYY/MM
+  char monthPath[24];
+  snprintf(monthPath, sizeof(monthPath), "%s/%02d", yearPath, month);
+  if (!SD.exists(monthPath)) {
+    if (!SD.mkdir(monthPath)) {
+      LOGE("Failed to create month directory: %s\n", monthPath);
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+void SdManager::generateFilename(char* buffer, size_t bufferSize) {
+  // Formato: /data/YYYY/MM/DD.txt usando RTC
   auto &rtc = RtcManager::instance();
+  
+  int year, month, day;
   
   if (!rtc.isAvailable()) {
     // Fallback a tiempo del sistema si RTC no está disponible
@@ -91,21 +119,26 @@ void SdManager::generateFilename(char* buffer, size_t bufferSize) const {
     struct tm timeinfo;
     localtime_r(&now, &timeinfo);
     
-    snprintf(buffer, bufferSize, "%s/%04d%02d%02d.txt",
-             kSdDataPath,
-             timeinfo.tm_year + 1900,
-             timeinfo.tm_mon + 1,
-             timeinfo.tm_mday);
-    return;
+    year = timeinfo.tm_year + 1900;
+    month = timeinfo.tm_mon + 1;
+    day = timeinfo.tm_mday;
+  } else {
+    // Usar fecha del RTC
+    DateTime now = rtc.now();
+    year = now.year();
+    month = now.month();
+    day = now.day();
   }
   
-  // Usar fecha del RTC
-  DateTime now = rtc.now();
-  snprintf(buffer, bufferSize, "%s/%04d%02d%02d.txt",
+  // Asegurar que existan las carpetas año/mes
+  ensureNestedDirectories(year, month);
+  
+  // Generar ruta completa: /data/YYYY/MM/DD.txt
+  snprintf(buffer, bufferSize, "%s/%04d/%02d/%02d.txt",
            kSdDataPath,
-           now.year(),
-           now.month(),
-           now.day());
+           year,
+           month,
+           day);
 }
 
 bool SdManager::writeDataRecord(const SensorDataRecord &record) {
@@ -113,7 +146,7 @@ bool SdManager::writeDataRecord(const SensorDataRecord &record) {
     return false;
   }
 
-  char filename[32];
+  char filename[48];
   generateFilename(filename, sizeof(filename));
   
   File file = SD.open(filename, FILE_APPEND);
@@ -140,7 +173,7 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
     return false;
   }
 
-  char filename[32];
+  char filename[48];
   generateFilename(filename, sizeof(filename));
   
   File file = SD.open(filename, FILE_APPEND);
@@ -180,6 +213,66 @@ uint64_t SdManager::getFreeBytes() const {
 
 sdcard_type_t SdManager::getCardType() const {
   return initialized_ ? SD.cardType() : CARD_NONE;
+}
+
+String SdManager::listFiles(int year, int month) {
+  if (!initialized_) {
+    return "SD_NOT_AVAILABLE";
+  }
+  
+  // Construir ruta: /data/YYYY/MM
+  char dirPath[24];
+  snprintf(dirPath, sizeof(dirPath), "%s/%04d/%02d", kSdDataPath, year, month);
+  
+  // Verificar si el directorio existe
+  if (!SD.exists(dirPath)) {
+    LOGW("Directory does not exist: %s\n", dirPath);
+    return "DIR_NOT_FOUND";
+  }
+  
+  File dir = SD.open(dirPath);
+  if (!dir || !dir.isDirectory()) {
+    LOGE("Failed to open directory: %s\n", dirPath);
+    return "DIR_OPEN_ERROR";
+  }
+  
+  String fileList;
+  File entry;
+  bool first = true;
+  
+  while ((entry = dir.openNextFile())) {
+    if (!entry.isDirectory()) {
+      // Obtener solo el nombre del archivo sin extensión
+      String filename = entry.name();
+      
+      // Extraer solo el nombre (sin la ruta completa si la tiene)
+      int lastSlash = filename.lastIndexOf('/');
+      if (lastSlash >= 0) {
+        filename = filename.substring(lastSlash + 1);
+      }
+      
+      // Remover extensión .txt si existe
+      if (filename.endsWith(".txt")) {
+        filename = filename.substring(0, filename.length() - 4);
+      }
+      
+      if (!first) {
+        fileList += ",";
+      }
+      fileList += filename;
+      first = false;
+    }
+    entry.close();
+  }
+  
+  dir.close();
+  
+  if (fileList.length() == 0) {
+    return "EMPTY";
+  }
+  
+  LOGI("Listed files in %s: %s\n", dirPath, fileList.c_str());
+  return fileList;
 }
 
 void SdManager::generateErrorFilename(char* buffer, size_t bufferSize) const {

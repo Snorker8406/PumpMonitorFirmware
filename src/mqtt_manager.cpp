@@ -9,6 +9,7 @@
 #include "rtc_manager.hpp"
 #include "app_config.hpp"
 #include "ota_manager.hpp"
+#include "sd_manager.hpp"
 
 // Forward declarations de funciones de control de Real Time
 extern void startRealTimeMode(uint32_t durationSeconds);
@@ -85,6 +86,41 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGI("MQTT: Real Time Mode activated for %lu seconds\n", durationSeconds);
     } else {
       LOGE("MQTT: Invalid Real Time duration (1-3600 seconds required)\n");
+    }
+  }
+  // Procesar backupList: listar archivos de backup en una fecha específica
+  else if (strstr(topic, "/backupList") != nullptr) {
+    // El payload contiene año,mes (ej: "2026,01")
+    int year, month;
+    int parsed = sscanf(msg, "%d,%d", &year, &month);
+    
+    if (parsed != 2 || year < 2000 || year > 2100 || month < 1 || month > 12) {
+      LOGE("MQTT: Invalid backupList format. Expected: year,month (e.g., 2026,01)\n");
+      return;
+    }
+    
+    // Obtener lista de archivos
+    auto &sd = SdManager::instance();
+    String fileList = sd.listFiles(year, month);
+    
+    // Obtener MAC para construir topic de respuesta
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') {
+        macNoColon[idx++] = *p;
+      }
+    }
+    
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/backupList", macNoColon);
+    
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, fileList.c_str())) {
+      LOGI("MQTT: Published backup list for %04d/%02d\n", year, month);
+    } else {
+      LOGE("MQTT: Failed to publish backup list\n");
     }
   }
   // Procesar installFirmware: marcar para actualizar firmware (se procesa fuera del callback)
