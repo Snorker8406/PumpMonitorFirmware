@@ -354,12 +354,17 @@ bool SdManager::uploadBackupFile(int year, int month, int day, int32_t deviceId)
   char serverFilename[20];
   snprintf(serverFilename, sizeof(serverFilename), "%04d%02d%02d.txt", year, month, day);
   
+  // Construir fecha del backup en formato DD/MM/YYYY
+  char backupDate[12];
+  snprintf(backupDate, sizeof(backupDate), "%02d/%02d/%04d", day, month, year);
+  
   // Enviar HTTP POST con el archivo como body
   uploadClient.print(String("POST ") + kBackupUploadEndpointPath + " HTTP/1.1\r\n");
   uploadClient.print(String("Host: ") + host + "\r\n");
   uploadClient.print(String("Content-Length: ") + String(fileSize) + "\r\n");
   uploadClient.print(String("Content-Type: application/octet-stream\r\n"));
   uploadClient.print(String("deviceId: ") + String(deviceId) + "\r\n");
+  uploadClient.print(String("backupDate: ") + String(backupDate) + "\r\n");
   uploadClient.print(String("Connection: close\r\n\r\n"));
   
   // Enviar archivo en chunks
