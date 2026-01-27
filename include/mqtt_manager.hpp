@@ -20,6 +20,11 @@ class MqttManager {
   void requestFirmwareUpdate(const char* version);
   void processPendingFirmwareUpdate();
   bool hasPendingFirmwareUpdate() const { return firmwareUpdatePending_; }
+  
+  // Backup upload
+  void requestBackupUpload(int year, int month, int day);
+  void processPendingBackupUpload();
+  bool hasPendingBackupUpload() const { return backupUploadPending_; }
 
  private:
   MqttManager();
@@ -33,4 +38,10 @@ class MqttManager {
   // Firmware update state
   volatile bool firmwareUpdatePending_ = false;
   char pendingFirmwareVersion_[32] = {0};
+  
+  // Backup upload state
+  volatile bool backupUploadPending_ = false;
+  int pendingBackupYear_ = 0;
+  int pendingBackupMonth_ = 0;
+  int pendingBackupDay_ = 0;
 };

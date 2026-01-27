@@ -40,6 +40,12 @@ class SdManager {
   
   // Listar archivos de un directorio
   String listFiles(int year, int month);
+  
+  // Obtener ruta de archivo de backup
+  String getBackupFilePath(int year, int month, int day);
+  
+  // Subir archivo de backup al servidor
+  bool uploadBackupFile(int year, int month, int day, int32_t deviceId);
 
  private:
   SdManager() = default;

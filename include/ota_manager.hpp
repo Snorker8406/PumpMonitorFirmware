@@ -33,6 +33,16 @@ class OtaManager {
    */
   bool performUpdate(const char* version);
 
+  /**
+   * @brief Suspende todas las tareas registradas para dar prioridad a operaciones críticas
+   */
+  void suspendAllTasks();
+
+  /**
+   * @brief Reanuda todas las tareas registradas
+   */
+  void resumeAllTasks();
+
  private:
   OtaManager() = default;
   OtaManager(const OtaManager &) = delete;
@@ -41,16 +51,6 @@ class OtaManager {
   static constexpr size_t kMaxTasks = 8;
   TaskHandle_t registeredTasks_[kMaxTasks] = {nullptr};
   size_t taskCount_ = 0;
-
-  /**
-   * @brief Suspende todas las tareas registradas para dar prioridad al OTA
-   */
-  void suspendAllTasks();
-
-  /**
-   * @brief Reanuda todas las tareas registradas (en caso de fallo del OTA)
-   */
-  void resumeAllTasks();
 
   /**
    * @brief Parsea la URL base para extraer host, puerto y protocolo

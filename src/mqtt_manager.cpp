@@ -123,6 +123,20 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to publish backup list\n");
     }
   }
+  // Procesar backupUpload: subir archivo de backup al servidor
+  else if (strstr(topic, "/backupUpload") != nullptr) {
+    // El payload contiene año,mes,dia (ej: "2026,01,25")
+    int year, month, day;
+    int parsed = sscanf(msg, "%d,%d,%d", &year, &month, &day);
+    
+    if (parsed != 3 || year < 2000 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) {
+      LOGE("MQTT: Invalid backupUpload format. Expected: year,month,day (e.g., 2026,01,25)\n");
+      return;
+    }
+    
+    // Guardar parámetros para procesar fuera del callback
+    MqttManager::instance().requestBackupUpload(year, month, day);
+  }
   // Procesar installFirmware: marcar para actualizar firmware (se procesa fuera del callback)
   else if (strstr(topic, "/installFirmware") != nullptr) {
     // El payload contiene la versión a instalar
@@ -387,4 +401,52 @@ void MqttManager::processPendingFirmwareUpdate() {
   
   // Delegar al OtaManager
   OtaManager::instance().performUpdate(pendingFirmwareVersion_);
+}
+
+void MqttManager::requestBackupUpload(int year, int month, int day) {
+  pendingBackupYear_ = year;
+  pendingBackupMonth_ = month;
+  pendingBackupDay_ = day;
+  backupUploadPending_ = true;
+  LOGI("MQTT: Backup upload queued for %04d/%02d/%02d\n", year, month, day);
+}
+
+void MqttManager::processPendingBackupUpload() {
+  if (!backupUploadPending_) {
+    return;
+  }
+  
+  backupUploadPending_ = false;
+  
+  LOGI("MQTT: Processing backup upload for %04d/%02d/%02d\n", 
+       pendingBackupYear_, pendingBackupMonth_, pendingBackupDay_);
+  
+  // Suspender todas las tareas para dar prioridad al upload
+  auto &ota = OtaManager::instance();
+  ota.suspendAllTasks();
+  
+  // Desconectar MQTT para liberar memoria y evitar conflictos de conexión
+  disconnect();
+  LOGI("MQTT: Disconnected for backup upload\n");
+  
+  // Esperar un poco para que se libere memoria
+  delay(500);
+  
+  // Obtener deviceId
+  auto &eeprom = EepromManager::instance();
+  int32_t deviceId = eeprom.getDeviceID();
+  
+  // Subir archivo
+  auto &sd = SdManager::instance();
+  bool success = sd.uploadBackupFile(pendingBackupYear_, pendingBackupMonth_, pendingBackupDay_, deviceId);
+  
+  // Reanudar todas las tareas
+  ota.resumeAllTasks();
+  
+  // Publicar resultado (reconectará automáticamente)
+  if (success) {
+    LOGI("MQTT: Backup upload completed successfully\n");
+  } else {
+    LOGE("MQTT: Backup upload failed\n");
+  }
 }

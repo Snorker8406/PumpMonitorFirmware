@@ -111,6 +111,14 @@ void mqttTask(void *) {
       continue;
     }
     
+    // Verificar si hay backup upload pendiente (fuera del callback)
+    if (mqtt.hasPendingBackupUpload()) {
+      mqtt.processPendingBackupUpload();
+      // Después del upload, reconectar MQTT
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      continue;
+    }
+    
     if (net.isConnected()) {
       mqtt.ensureConnected();
       mqtt.loop();

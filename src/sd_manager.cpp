@@ -2,8 +2,14 @@
 
 #include <time.h>
 #include <stdarg.h>
+#include <WiFiClientSecure.h>
 #include "log.hpp"
 #include "rtc_manager.hpp"
+
+namespace {
+  // Cliente WiFi estático para upload (evita problemas de memoria del heap)
+  WiFiClientSecure uploadClient;
+}
 
 SdManager &SdManager::instance() {
   static SdManager inst;
@@ -273,6 +279,144 @@ String SdManager::listFiles(int year, int month) {
   
   LOGI("Listed files in %s: %s\n", dirPath, fileList.c_str());
   return fileList;
+}
+
+String SdManager::getBackupFilePath(int year, int month, int day) {
+  // Construir ruta: /data/YYYY/MM/DD.txt
+  char filePath[48];
+  snprintf(filePath, sizeof(filePath), "%s/%04d/%02d/%02d.txt", 
+           kSdDataPath, year, month, day);
+  return String(filePath);
+}
+
+bool SdManager::uploadBackupFile(int year, int month, int day, int32_t deviceId) {
+  if (!initialized_) {
+    LOGE("SD: Not initialized, cannot upload\n");
+    return false;
+  }
+  
+  // Obtener ruta del archivo
+  String filePath = getBackupFilePath(year, month, day);
+  
+  // Verificar si el archivo existe
+  if (!SD.exists(filePath.c_str())) {
+    LOGE("SD: Backup file does not exist: %s\n", filePath.c_str());
+    return false;
+  }
+  
+  // Abrir archivo
+  File file = SD.open(filePath.c_str(), FILE_READ);
+  if (!file) {
+    LOGE("SD: Failed to open file: %s\n", filePath.c_str());
+    return false;
+  }
+  
+  size_t fileSize = file.size();
+  if (fileSize == 0) {
+    LOGW("SD: File is empty: %s\n", filePath.c_str());
+    file.close();
+    return false;
+  }
+  
+  LOGI("SD: Uploading %s (%u bytes)\n", filePath.c_str(), fileSize);
+  
+  // Usar cliente HTTPS estático
+  uploadClient.setInsecure();  // Skip certificate validation
+  
+  // Parsear URL base (similar a OTA)
+  String baseUrl = String(kFirmwareBaseUrl);
+  String host;
+  int port = 443;
+  
+  if (baseUrl.startsWith("https://")) {
+    host = baseUrl.substring(8);
+  } else if (baseUrl.startsWith("http://")) {
+    host = baseUrl.substring(7);
+    port = 80;
+  }
+  
+  // Remover trailing slash
+  if (host.endsWith("/")) {
+    host.remove(host.length() - 1);
+  }
+  
+  LOGI("SD: Connecting to %s:%d\n", host.c_str(), port);
+  
+  if (!uploadClient.connect(host.c_str(), port)) {
+    LOGE("SD: Connection to server failed\n");
+    file.close();
+    return false;
+  }
+  
+  LOGI("SD: Connected, uploading...\n");
+  
+  // Construir nombre del archivo para el servidor (YYYYMMDD.txt)
+  char serverFilename[20];
+  snprintf(serverFilename, sizeof(serverFilename), "%04d%02d%02d.txt", year, month, day);
+  
+  // Enviar HTTP POST con el archivo como body
+  uploadClient.print(String("POST ") + kBackupUploadEndpointPath + " HTTP/1.1\r\n");
+  uploadClient.print(String("Host: ") + host + "\r\n");
+  uploadClient.print(String("Content-Length: ") + String(fileSize) + "\r\n");
+  uploadClient.print(String("Content-Type: application/octet-stream\r\n"));
+  uploadClient.print(String("deviceId: ") + String(deviceId) + "\r\n");
+  uploadClient.print(String("Connection: close\r\n\r\n"));
+  
+  // Enviar archivo en chunks
+  uint8_t buffer[1024];
+  size_t totalSent = 0;
+  
+  while (file.available()) {
+    size_t bytesRead = file.read(buffer, sizeof(buffer));
+    if (bytesRead > 0) {
+      size_t bytesWritten = uploadClient.write(buffer, bytesRead);
+      if (bytesWritten != bytesRead) {
+        LOGE("SD: Write error, sent %u of %u bytes\n", bytesWritten, bytesRead);
+        uploadClient.stop();
+        file.close();
+        delay(100);  // Dar tiempo al TLS para liberar recursos
+        return false;
+      }
+      totalSent += bytesWritten;
+    }
+  }
+  
+  file.close();
+  LOGI("SD: Sent %u bytes\n", totalSent);
+  
+  // Esperar respuesta con timeout
+  unsigned long timeout = millis();
+  while (uploadClient.available() == 0) {
+    if (millis() - timeout > 30000) {
+      LOGE("SD: Timeout waiting for server response\n");
+      uploadClient.stop();
+      delay(100);  // Dar tiempo al TLS para liberar recursos
+      return false;
+    }
+    delay(10);
+  }
+  
+  // Leer respuesta
+  bool success = false;
+  while (uploadClient.available()) {
+    String line = uploadClient.readStringUntil('\n');
+    LOGD("SD: Response: %s\n", line.c_str());
+    
+    // Verificar código de respuesta HTTP
+    if (line.startsWith("HTTP/1.1 2") || line.startsWith("HTTP/1.0 2")) {
+      success = true;
+      LOGI("SD: Upload successful (HTTP 2xx)\n");
+    }
+  }
+  
+  uploadClient.stop();
+  delay(100);  // Dar tiempo al TLS para liberar recursos
+  
+  if (!success) {
+    LOGE("SD: Upload failed (non-2xx response)\n");
+  }
+  
+  return success;
 }
 
 void SdManager::generateErrorFilename(char* buffer, size_t bufferSize) const {
