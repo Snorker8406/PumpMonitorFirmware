@@ -18,6 +18,9 @@ constexpr const char* kFirmwareEndpointPath = "/api/Firmware/InstallFirmware/";
 constexpr const char* kBackupUploadEndpointPath = "/api/BackupDeviceFiles/Upload";
 constexpr uint32_t kOtaTimeoutMs = 30000;  // Timeout para conexión y respuesta
 
+// API Security
+constexpr const char* kApiKey = "a90f091431c4995062e041bdb7cdd3d6c3c26371e678b597a0e65eb7b6cdad4f";  // Cambiar por la API key real
+
 // WT32-ETH01 / LAN8720 wiring
 constexpr int kEthAddr = 1;
 constexpr int kEthPowerPin = 16;

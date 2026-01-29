@@ -361,6 +361,7 @@ bool SdManager::uploadBackupFile(int year, int month, int day, int32_t deviceId)
   // Enviar HTTP POST con el archivo como body
   uploadClient.print(String("POST ") + kBackupUploadEndpointPath + " HTTP/1.1\r\n");
   uploadClient.print(String("Host: ") + host + "\r\n");
+  uploadClient.print(String("X-Device-Api-Key: ") + kApiKey + "\r\n");
   uploadClient.print(String("Content-Length: ") + String(fileSize) + "\r\n");
   uploadClient.print(String("Content-Type: application/octet-stream\r\n"));
   uploadClient.print(String("deviceId: ") + String(deviceId) + "\r\n");

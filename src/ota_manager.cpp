@@ -79,6 +79,7 @@ bool OtaManager::connectAndSendRequest(const char* host, int port, const char* p
   // Enviar request HTTP GET
   otaClient.print(String("GET ") + path + " HTTP/1.1\r\n" +
                   "Host: " + host + "\r\n" +
+                  "X-Device-Api-Key: " + kApiKey + "\r\n" +
                   "Cache-Control: no-cache\r\n" +
                   "Connection: close\r\n\r\n");
   
