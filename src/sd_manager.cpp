@@ -2,14 +2,10 @@
 
 #include <time.h>
 #include <stdarg.h>
+#include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include "log.hpp"
 #include "rtc_manager.hpp"
-
-namespace {
-  // Cliente WiFi estático para upload (evita problemas de memoria del heap)
-  WiFiClientSecure uploadClient;
-}
 
 SdManager &SdManager::instance() {
   static SdManager inst;
@@ -320,10 +316,11 @@ bool SdManager::uploadBackupFile(int year, int month, int day, int32_t deviceId)
   
   LOGI("SD: Uploading %s (%u bytes)\n", filePath.c_str(), fileSize);
   
-  // Usar cliente HTTPS estático
-  uploadClient.setInsecure();  // Skip certificate validation
+  // Construir fecha del backup en formato DD/MM/YYYY
+  char backupDate[12];
+  snprintf(backupDate, sizeof(backupDate), "%02d/%02d/%04d", day, month, year);
   
-  // Parsear URL base (similar a OTA)
+  // Parsear URL
   String baseUrl = String(kFirmwareBaseUrl);
   String host;
   int port = 443;
@@ -334,93 +331,99 @@ bool SdManager::uploadBackupFile(int year, int month, int day, int32_t deviceId)
     host = baseUrl.substring(7);
     port = 80;
   }
-  
-  // Remover trailing slash
   if (host.endsWith("/")) {
     host.remove(host.length() - 1);
   }
   
-  LOGI("SD: Connecting to %s:%d\n", host.c_str(), port);
-  
-  if (!uploadClient.connect(host.c_str(), port)) {
-    LOGE("SD: Connection to server failed\n");
+  // Crear cliente TLS
+  WiFiClientSecure* client = new WiFiClientSecure();
+  if (!client) {
+    LOGE("SD: Failed to allocate client\n");
     file.close();
     return false;
   }
+  client->setInsecure();
   
-  LOGI("SD: Connected, uploading...\n");
+  LOGI("SD: Connecting to %s:%d\n", host.c_str(), port);
   
-  // Construir nombre del archivo para el servidor (YYYYMMDD.txt)
-  char serverFilename[20];
-  snprintf(serverFilename, sizeof(serverFilename), "%04d%02d%02d.txt", year, month, day);
+  if (!client->connect(host.c_str(), port)) {
+    LOGE("SD: Connection failed\n");
+    file.close();
+    delete client;
+    return false;
+  }
   
-  // Construir fecha del backup en formato DD/MM/YYYY
-  char backupDate[12];
-  snprintf(backupDate, sizeof(backupDate), "%02d/%02d/%04d", day, month, year);
+  LOGI("SD: Connected, streaming %u bytes...\n", fileSize);
   
-  // Enviar HTTP POST con el archivo como body
-  uploadClient.print(String("POST ") + kBackupUploadEndpointPath + " HTTP/1.1\r\n");
-  uploadClient.print(String("Host: ") + host + "\r\n");
-  uploadClient.print(String("X-Device-Api-Key: ") + kApiKey + "\r\n");
-  uploadClient.print(String("Content-Length: ") + String(fileSize) + "\r\n");
-  uploadClient.print(String("Content-Type: application/octet-stream\r\n"));
-  uploadClient.print(String("deviceId: ") + String(deviceId) + "\r\n");
-  uploadClient.print(String("backupDate: ") + String(backupDate) + "\r\n");
-  uploadClient.print(String("Connection: close\r\n\r\n"));
+  // Enviar headers HTTP
+  client->printf("POST %s HTTP/1.1\r\n", kBackupUploadEndpointPath);
+  client->printf("Host: %s\r\n", host.c_str());
+  client->printf("X-Device-Api-Key: %s\r\n", kApiKey);
+  client->printf("Content-Type: application/octet-stream\r\n");
+  client->printf("Content-Length: %u\r\n", fileSize);
+  client->printf("deviceId: %d\r\n", deviceId);
+  client->printf("backupDate: %s\r\n", backupDate);
+  client->printf("Connection: close\r\n\r\n");
   
-  // Enviar archivo en chunks
-  uint8_t buffer[1024];
+  // Streaming: enviar archivo en chunks pequeños
+  uint8_t buffer[512];
   size_t totalSent = 0;
+  size_t lastProgress = 0;
   
-  while (file.available()) {
+  while (file.available() && client->connected()) {
     size_t bytesRead = file.read(buffer, sizeof(buffer));
     if (bytesRead > 0) {
-      size_t bytesWritten = uploadClient.write(buffer, bytesRead);
-      if (bytesWritten != bytesRead) {
-        LOGE("SD: Write error, sent %u of %u bytes\n", bytesWritten, bytesRead);
-        uploadClient.stop();
-        file.close();
-        delay(100);  // Dar tiempo al TLS para liberar recursos
-        return false;
+      size_t written = client->write(buffer, bytesRead);
+      if (written != bytesRead) {
+        LOGE("SD: Write error at %u bytes\n", totalSent);
+        break;
       }
-      totalSent += bytesWritten;
+      totalSent += written;
+      
+      // Log progreso cada 64KB
+      if (totalSent - lastProgress >= 65536) {
+        LOGI("SD: Sent %u / %u bytes (%u%%)\n", totalSent, fileSize, (totalSent * 100) / fileSize);
+        lastProgress = totalSent;
+      }
     }
+    yield();  // Permitir que el sistema procese
   }
   
   file.close();
-  LOGI("SD: Sent %u bytes\n", totalSent);
+  LOGI("SD: Sent %u bytes total\n", totalSent);
   
-  // Esperar respuesta con timeout
-  unsigned long timeout = millis();
-  while (uploadClient.available() == 0) {
-    if (millis() - timeout > 30000) {
-      LOGE("SD: Timeout waiting for server response\n");
-      uploadClient.stop();
-      delay(100);  // Dar tiempo al TLS para liberar recursos
-      return false;
-    }
-    delay(10);
-  }
-  
-  // Leer respuesta
   bool success = false;
-  while (uploadClient.available()) {
-    String line = uploadClient.readStringUntil('\n');
-    LOGD("SD: Response: %s\n", line.c_str());
-    
-    // Verificar código de respuesta HTTP
-    if (line.startsWith("HTTP/1.1 2") || line.startsWith("HTTP/1.0 2")) {
-      success = true;
-      LOGI("SD: Upload successful (HTTP 2xx)\n");
+  
+  if (totalSent == fileSize) {
+    // Esperar respuesta
+    unsigned long timeout = millis();
+    while (client->available() == 0 && client->connected()) {
+      if (millis() - timeout > 30000) {
+        LOGE("SD: Timeout waiting for response\n");
+        break;
+      }
+      delay(10);
     }
+    
+    // Leer respuesta HTTP
+    if (client->available()) {
+      String statusLine = client->readStringUntil('\n');
+      LOGI("SD: Response: %s\n", statusLine.c_str());
+      
+      if (statusLine.indexOf("200") > 0 || statusLine.indexOf("201") > 0 || statusLine.indexOf("204") > 0) {
+        success = true;
+        LOGI("SD: Upload successful\n");
+      } else {
+        LOGE("SD: Upload failed: %s\n", statusLine.c_str());
+      }
+    }
+  } else {
+    LOGE("SD: Incomplete upload: sent %u of %u bytes\n", totalSent, fileSize);
   }
   
-  uploadClient.stop();
-  delay(100);  // Dar tiempo al TLS para liberar recursos
-  
-  if (!success) {
-    LOGE("SD: Upload failed (non-2xx response)\n");
-  }
+  client->stop();
+  delete client;
+  client = nullptr;
   
   return success;
 }
