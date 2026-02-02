@@ -16,6 +16,20 @@ extern void startRealTimeMode(uint32_t durationSeconds);
 
 namespace {
 constexpr char kMqttClientIdPrefix[] = "pump-monitor";
+
+// Helper para obtener la hora del RTC como string formateado
+String getDeviceTimeString() {
+  auto &rtc = RtcManager::instance();
+  if (rtc.isAvailable()) {
+    DateTime now = rtc.now();
+    char timeBuffer[32];
+    snprintf(timeBuffer, sizeof(timeBuffer), "%04d-%02d-%02d %02d:%02d:%02d",
+             now.year(), now.month(), now.day(),
+             now.hour(), now.minute(), now.second());
+    return String(timeBuffer);
+  }
+  return "RTC_NOT_AVAILABLE";
+}
 }
 
 MqttManager &MqttManager::instance() {
@@ -186,6 +200,10 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       value = String(eeprom.getDeviceID());
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/deviceId", macNoColon);
     }
+    else if (strcmp(varName, "deviceTime") == 0) {
+      value = getDeviceTimeString();
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/deviceTime", macNoColon);
+    }
     else {
       LOGW("MQTT: Unknown variable requested: %s\n", varName);
       return;
@@ -217,15 +235,19 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     uint16_t ivInterval = eeprom.getInstantValuesIntervalSec();
     int32_t deviceId = eeprom.getDeviceID();
     
+    // Obtener hora del dispositivo
+    String deviceTime = getDeviceTimeString();
+    
     // Construir JSON con todas las variables
     char jsonBuffer[512];
     snprintf(jsonBuffer, sizeof(jsonBuffer),
-             "{\"webService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u,\"instantValuesIntervalSec\":%u,\"deviceId\":%d}",
+             "{\"webService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u,\"instantValuesIntervalSec\":%u,\"deviceId\":%d,\"deviceTime\":\"%s\"}",
              webServiceUrl.c_str(),
              kFirmwareVersion,
              rtInterval,
              ivInterval,
-             deviceId);
+             deviceId,
+             deviceTime.c_str());
     
     // Publicar todas las variables en un solo mensaje
     char responseTopic[64];
@@ -272,17 +294,13 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
         }
       }
       
-      DateTime now = rtc.now();
-      char timeBuffer[32];
-      snprintf(timeBuffer, sizeof(timeBuffer), "%04d-%02d-%02d %02d:%02d:%02d",
-               now.year(), now.month(), now.day(),
-               now.hour(), now.minute(), now.second());
+      String deviceTimeStr = getDeviceTimeString();
       
       char responseTopic[64];
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/deviceTime", macNoColon);
       
       auto &mqtt = MqttManager::instance();
-      if (mqtt.publish(responseTopic, timeBuffer)) {
+      if (mqtt.publish(responseTopic, deviceTimeStr.c_str())) {
         LOGI("MQTT: Published device time confirmation\n");
       } else {
         LOGE("MQTT: Failed to publish device time\n");
