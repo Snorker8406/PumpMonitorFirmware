@@ -2,7 +2,6 @@
 
 #include <ModbusIP_ESP8266.h>
 #include <vector>
-#include <map>
 
 #include "app_config.hpp"
 
@@ -32,6 +31,4 @@ class ModbusManager {
 
   ModbusIP client_;
   unsigned long lastReadMs_ = 0;
-  std::map<uint32_t, uint32_t> lastConnectAttempt_;  // IP -> timestamp último intento
-  std::map<uint32_t, uint8_t> consecutiveZeros_;     // IP -> contador de lecturas con ceros
 };
