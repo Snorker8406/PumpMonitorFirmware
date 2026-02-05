@@ -65,9 +65,6 @@ TaskHandle_t sdTaskHandle = nullptr;
 TaskHandle_t realTimeModbusTaskHandle = nullptr;
 TaskHandle_t instantValuesTaskHandle = nullptr;
 
-// Mutex para sincronizar acceso a ModbusManager entre tareas
-SemaphoreHandle_t modbusMutex = nullptr;
-
 // ----- Network monitor task -----
 
 void networkMonitorTask(void *) {
@@ -144,28 +141,23 @@ void modbusTask(void *) {
     if (net.isConnected()) {
       modbus.loop();
       
-      // Adquirir mutex antes de acceder a Modbus
-      if (xSemaphoreTake(modbusMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        bool readSuccess = modbus.readAllDevices(devicesData);
-        xSemaphoreGive(modbusMutex);  // Liberar mutex
-        
-        if (readSuccess) {
-          // Mostrar datos en consola
-          for (const auto &device : devicesData) {
-            if (device.success) {
-              LOGI("[%s] Data: ", device.modbusModelName);
-              for (size_t i = 0; i < device.values.size(); i++) {
-                Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
-              }
-            } else {
-              LOGE("Modbus %s read failed, no data available\n", device.modbusModelName);
+      // Leer dispositivos Modbus (thread-safe internamente)
+      bool readSuccess = modbus.readAllDevices(devicesData);
+      
+      if (readSuccess) {
+        // Mostrar datos en consola
+        for (const auto &device : devicesData) {
+          if (device.success) {
+            LOGI("[%s] Data: ", device.modbusModelName);
+            for (size_t i = 0; i < device.values.size(); i++) {
+              Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
             }
+          } else {
+            LOGE("Modbus %s read failed, no data available\n", device.modbusModelName);
           }
-        } else {
-          LOGE("Modbus read failed for all devices\n");
         }
       } else {
-        LOGW("Modbus mutex timeout in modbusTask\n");
+        LOGE("Modbus read failed for all devices\n");
       }
       
       // Liberar vectores y consolidar heap
@@ -212,12 +204,10 @@ void realTimeModbusTask(void *) {
       std::vector<ModbusDeviceData> devicesData;
       devicesData.reserve(kModbusDeviceCount);
       
-      // Adquirir mutex antes de acceder a Modbus
-      if (xSemaphoreTake(modbusMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-        bool readSuccess = modbus.readAllDevices(devicesData);
-        xSemaphoreGive(modbusMutex);  // Liberar mutex inmediatamente
-        
-        if (readSuccess) {
+      // Leer dispositivos Modbus (thread-safe internamente)
+      bool readSuccess = modbus.readAllDevices(devicesData);
+      
+      if (readSuccess) {
         for (const auto &device : devicesData) {
           if (device.success && !device.rawData.empty()) {
             // Construir mensaje: modbusModelId,HEXDATA
@@ -247,16 +237,11 @@ void realTimeModbusTask(void *) {
         
         // Liberar memoria
         devicesData.clear();
-        devicesData.shrink_to_fit();
         
         // Esperar intervalo configurado
         vTaskDelay(pdMS_TO_TICKS(intervalSec * 1000));
-        } else {
-          LOGE("RT: Modbus read failed\n");
-          vTaskDelay(pdMS_TO_TICKS(1000));
-        }
       } else {
-        LOGW("RT: Modbus mutex timeout\n");
+        LOGE("RT: Modbus read failed\n");
         vTaskDelay(pdMS_TO_TICKS(1000));
       }
     } else {
@@ -336,67 +321,60 @@ void instantValuesTask(void *) {
       std::vector<ModbusDeviceData> devicesData;
       devicesData.reserve(kModbusDeviceCount);
       
-      // Adquirir mutex antes de acceder a Modbus
-      if (xSemaphoreTake(modbusMutex, pdMS_TO_TICKS(500)) == pdTRUE) {
-        bool readSuccess = modbus.readAllDevices(devicesData);
-        xSemaphoreGive(modbusMutex);  // Liberar mutex inmediatamente
+      // Leer dispositivos Modbus (thread-safe internamente)
+      bool readSuccess = modbus.readAllDevices(devicesData);
+      
+      if (readSuccess) {
+        recordsBuffer.clear();
+        unsigned long timestamp = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
         
-        if (readSuccess) {
-          recordsBuffer.clear();
-          unsigned long timestamp = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
-          
-          for (const auto &device : devicesData) {
-            if (device.success && !device.rawData.empty()) {
-              // Construir mensaje: {deviceId},{modbusModelId},{rawData}
-              char msgBuffer[512];
-              int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%d,%u,", deviceId, device.modbusModelId);
-              
-              // Agregar datos hexadecimales
-              for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
-                offset += snprintf(msgBuffer + offset, sizeof(msgBuffer) - offset, "%04X", device.rawData[i]);
-              }
-              
-              // Publicar por MQTT
-              if (mqtt.publish(instValTopic, msgBuffer)) {
-                LOGD("IV: Published %s\n", device.modbusModelName);
-              } else {
-                LOGE("IV: Failed to publish %s\n", device.modbusModelName);
-              }
-              
-              // Preparar registro para SD
-              SensorDataRecord record;
-              record.timestamp = timestamp;
-              record.modbusModelId = device.modbusModelId;
-              record.modbusModelName = device.modbusModelName;
-              record.deviceIp = device.ip;
-              record.values = device.values;
-              record.rawData = device.rawData;
-              recordsBuffer.push_back(record);
-              
-              // Esperar entre dispositivos
-              vTaskDelay(pdMS_TO_TICKS(kModbusInterDeviceDelayMs));
+        for (const auto &device : devicesData) {
+          if (device.success && !device.rawData.empty()) {
+            // Construir mensaje: {deviceId},{modbusModelId},{rawData}
+            char msgBuffer[512];
+            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%d,%u,", deviceId, device.modbusModelId);
+            
+            // Agregar datos hexadecimales
+            for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
+              offset += snprintf(msgBuffer + offset, sizeof(msgBuffer) - offset, "%04X", device.rawData[i]);
             }
-          }
-          
-          // Guardar en SD si está disponible
-          if (sd.isAvailable() && !recordsBuffer.empty()) {
-            if (sd.writeDataBatch(recordsBuffer)) {
-              LOGI("SD: %u records saved\n", recordsBuffer.size());
+            
+            // Publicar por MQTT
+            if (mqtt.publish(instValTopic, msgBuffer)) {
+              LOGD("IV: Published %s\n", device.modbusModelName);
             } else {
-              LOGE("SD: failed to write %u records\n", recordsBuffer.size());
+              LOGE("IV: Failed to publish %s\n", device.modbusModelName);
             }
+            
+            // Preparar registro para SD
+            SensorDataRecord record;
+            record.timestamp = timestamp;
+            record.modbusModelId = device.modbusModelId;
+            record.modbusModelName = device.modbusModelName;
+            record.deviceIp = device.ip;
+            record.values = device.values;
+            record.rawData = device.rawData;
+            recordsBuffer.push_back(record);
+            
+            // Esperar entre dispositivos
+            vTaskDelay(pdMS_TO_TICKS(kModbusInterDeviceDelayMs));
           }
-          
-          // Liberar memoria
-          devicesData.clear();
-          devicesData.shrink_to_fit();
-          recordsBuffer.clear();
-          recordsBuffer.shrink_to_fit();
-        } else {
-          LOGE("IV: Modbus read failed\n");
         }
+        
+        // Guardar en SD si está disponible
+        if (sd.isAvailable() && !recordsBuffer.empty()) {
+          if (sd.writeDataBatch(recordsBuffer)) {
+            LOGI("SD: %u records saved\n", recordsBuffer.size());
+          } else {
+            LOGE("SD: failed to write %u records\n", recordsBuffer.size());
+          }
+        }
+        
+        // Liberar memoria
+        devicesData.clear();
+        recordsBuffer.clear();
       } else {
-        LOGW("IV: Modbus mutex timeout\n");
+        LOGE("IV: Modbus read failed\n");
       }
     }
     
@@ -429,12 +407,6 @@ void setup() {
   // Inicializar Ethernet
   const bool ethOk = NetworkManager::instance().begin();
   LOGI("%s\n", ethOk ? "Ethernet listo" : "Ethernet fallo al iniciar");
-
-  // Crear mutex para sincronización de Modbus
-  modbusMutex = xSemaphoreCreateMutex();
-  if (modbusMutex == nullptr) {
-    LOGE("Failed to create modbus mutex\n");
-  }
 
   // ----- Task creation -----
   xTaskCreatePinnedToCore(
