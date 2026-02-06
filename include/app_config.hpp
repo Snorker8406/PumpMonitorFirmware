@@ -79,8 +79,8 @@ static const ModbusDeviceConfig kModbusDevices[] = {
 };
 constexpr size_t kModbusDeviceCount = sizeof(kModbusDevices) / sizeof(kModbusDevices[0]);
 
-constexpr uint16_t kModbusChunkSize = 25;  // Leer 25 registros por chunk (más estable)
-constexpr uint32_t kModbusChunkDelayMs = 500;  // Delay entre chunks (500ms)
+constexpr uint16_t kModbusChunkSize = 20;  // Leer 20 registros por chunk (más estable)
+constexpr uint32_t kModbusChunkDelayMs = 600;  // Delay entre chunks (600ms)
 constexpr uint32_t kModbusReadPeriodMs = 10000;
 constexpr uint32_t kModbusInterDeviceDelayMs = 500;  // Delay entre dispositivos
 constexpr uint32_t kModbusTaskStackWords = 10240;  // Stack para manejar hasta 120 registros por dispositivo

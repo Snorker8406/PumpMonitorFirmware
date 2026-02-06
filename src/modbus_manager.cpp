@@ -23,8 +23,8 @@ void ModbusManager::begin() {
   for (size_t i = 0; i < kModbusDeviceCount; i++) {
     modbusClients_[i] = new ModbusClientTCP(tcpClients_[i]);
     
-    // Configurar timeouts (en ms) - 5s timeout, 200ms intervalo
-    modbusClients_[i]->setTimeout(5000, 200);
+    // Configurar timeouts (en ms) - 8s timeout, 200ms intervalo
+    modbusClients_[i]->setTimeout(8000, 200);
     
     // Registrar callbacks usando lambdas que llaman a los métodos de instancia
     modbusClients_[i]->onDataHandler([](ModbusMessage response, uint32_t token) {
@@ -181,9 +181,9 @@ bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, s
       break;
     }
     
-    // Esperar respuesta con timeout (5 segundos)
+    // Esperar respuesta con timeout (8 segundos)
     unsigned long startMs = millis();
-    while (!readComplete_ && (millis() - startMs) < 5000) {
+    while (!readComplete_ && (millis() - startMs) < 8000) {
       vTaskDelay(pdMS_TO_TICKS(10));
     }
     
