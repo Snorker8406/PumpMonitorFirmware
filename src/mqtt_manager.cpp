@@ -30,6 +30,27 @@ String getDeviceTimeString() {
   }
   return "RTC_NOT_AVAILABLE";
 }
+
+// Helper para construir JSON con todas las variables del dispositivo
+void buildAllVariablesJson(char* buffer, size_t bufferSize, const char* macNoColon) {
+  auto &eeprom = EepromManager::instance();
+  
+  String webServiceUrl = eeprom.getWebServiceURL();
+  uint16_t rtInterval = eeprom.getRealTimeIntervalSec();
+  uint16_t ivInterval = eeprom.getInstantValuesIntervalSec();
+  int32_t deviceId = eeprom.getDeviceID();
+  String deviceTime = getDeviceTimeString();
+  
+  snprintf(buffer, bufferSize,
+           "{\"mac\":\"%s\",\"webService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u,\"instantValuesIntervalSec\":%u,\"deviceId\":%d,\"deviceTime\":\"%s\"}",
+           macNoColon,
+           webServiceUrl.c_str(),
+           kFirmwareVersion,
+           rtInterval,
+           ivInterval,
+           deviceId,
+           deviceTime.c_str());
+}
 }
 
 MqttManager &MqttManager::instance() {
@@ -229,25 +250,9 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       }
     }
     
-    // Obtener valores primero para evitar problemas con temporales
-    String webServiceUrl = eeprom.getWebServiceURL();
-    uint16_t rtInterval = eeprom.getRealTimeIntervalSec();
-    uint16_t ivInterval = eeprom.getInstantValuesIntervalSec();
-    int32_t deviceId = eeprom.getDeviceID();
-    
-    // Obtener hora del dispositivo
-    String deviceTime = getDeviceTimeString();
-    
     // Construir JSON con todas las variables
     char jsonBuffer[512];
-    snprintf(jsonBuffer, sizeof(jsonBuffer),
-             "{\"webService\":\"%s\",\"firmwareVersion\":\"%s\",\"realTimeIntervalSec\":%u,\"instantValuesIntervalSec\":%u,\"deviceId\":%d,\"deviceTime\":\"%s\"}",
-             webServiceUrl.c_str(),
-             kFirmwareVersion,
-             rtInterval,
-             ivInterval,
-             deviceId,
-             deviceTime.c_str());
+    buildAllVariablesJson(jsonBuffer, sizeof(jsonBuffer), macNoColon);
     
     // Publicar todas las variables en un solo mensaje
     char responseTopic[64];
@@ -346,6 +351,9 @@ bool MqttManager::connectInternal() {
     } else {
       LOGE("MQTT subscribe to %s failed\n", deviceTopic);
     }
+    
+    // Publicar mensaje de arranque con todas las variables
+    publishStartingMessage(macNoColon);
   } else {
     int state = client_.state();
     LOGE("MQTT connect failed rc=%d (broker=%s:%u, user=%s)\n", 
@@ -466,5 +474,22 @@ void MqttManager::processPendingBackupUpload() {
     LOGI("MQTT: Backup upload completed successfully\n");
   } else {
     LOGE("MQTT: Backup upload failed\n");
+  }
+}
+
+void MqttManager::publishStartingMessage(const char* macNoColon) {
+  // Construir JSON con todas las variables + MAC
+  char jsonBuffer[512];
+  buildAllVariablesJson(jsonBuffer, sizeof(jsonBuffer), macNoColon);
+  
+  // Construir topic: kMqttSystemTopic/starting
+  char startingTopic[64];
+  snprintf(startingTopic, sizeof(startingTopic), "%s/starting", kMqttSystemTopic);
+  
+  // Publicar mensaje de arranque
+  if (client_.publish(startingTopic, jsonBuffer)) {
+    LOGI("MQTT: Published starting message to %s\n", startingTopic);
+  } else {
+    LOGE("MQTT: Failed to publish starting message\n");
   }
 }
