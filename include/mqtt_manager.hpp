@@ -30,6 +30,7 @@ class MqttManager {
   MqttManager();
   bool connectInternal();
   void publishStartingMessage(const char* macNoColon);
+  void publishPendingBackupResult();
   static void messageCallback(char* topic, byte* payload, unsigned int length);
 
   WiFiClientSecure secureClient_;

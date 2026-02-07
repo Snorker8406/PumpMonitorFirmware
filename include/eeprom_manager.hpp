@@ -25,6 +25,12 @@ class EepromManager {
   int32_t getDeviceID();
   bool setDeviceID(int32_t id);
   
+  // Backup Result (persistente para publicar después de reinicio)
+  String getPendingBackupResult();
+  bool setPendingBackupResult(const char* result);
+  void clearPendingBackupResult();
+  bool hasPendingBackupResult();
+  
   // Resetear a valores por defecto
   void resetToDefaults();
   
@@ -39,6 +45,7 @@ class EepromManager {
   static constexpr const char* kKeyRTInterval = "rtInterval";
   static constexpr const char* kKeyIVInterval = "ivInterval";
   static constexpr const char* kKeyDeviceID = "deviceId";
+  static constexpr const char* kKeyBackupResult = "backupRes";
   static constexpr const char* kDefaultUrl = "https://pumpmonitor.agrotecsa.com.mx/";
   static constexpr uint16_t kDefaultRTInterval = 3;
   static constexpr uint16_t kDefaultIVInterval = 60;  // 1 minuto por defecto

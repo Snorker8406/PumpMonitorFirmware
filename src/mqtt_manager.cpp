@@ -379,6 +379,9 @@ void MqttManager::ensureConnected() {
 void MqttManager::loop() {
   if (client_.connected()) {
     client_.loop();
+    
+    // Publicar mensajes pendientes si hay conexión establecida
+    publishPendingBackupResult();
   }
 }
 
@@ -466,10 +469,16 @@ void MqttManager::processPendingBackupUpload() {
   auto &sd = SdManager::instance();
   bool success = sd.uploadBackupFile(pendingBackupYear_, pendingBackupMonth_, pendingBackupDay_, deviceId);
   
+  // Guardar resultado en EEPROM para publicar después de reconectar (persistente)
+  // Formato: "deviceId-DD/MM/YYYY-resultado"
+  char resultPayload[32];
+  snprintf(resultPayload, sizeof(resultPayload), "%d-%02d/%02d/%04d-%d",
+           deviceId, pendingBackupDay_, pendingBackupMonth_, pendingBackupYear_, success ? 1 : 0);
+  eeprom.setPendingBackupResult(resultPayload);
+  
   // Reanudar todas las tareas
   ota.resumeAllTasks();
   
-  // Publicar resultado (reconectará automáticamente)
   if (success) {
     LOGI("MQTT: Backup upload completed successfully\n");
   } else {
@@ -491,5 +500,28 @@ void MqttManager::publishStartingMessage(const char* macNoColon) {
     LOGI("MQTT: Published starting message to %s\n", startingTopic);
   } else {
     LOGE("MQTT: Failed to publish starting message\n");
+  }
+}
+
+void MqttManager::publishPendingBackupResult() {
+  auto &eeprom = EepromManager::instance();
+  
+  if (!eeprom.hasPendingBackupResult()) {
+    return;
+  }
+  
+  String payload = eeprom.getPendingBackupResult();
+  
+  // Construir topic: kMqttSystemTopic/uploadBackup
+  char topic[64];
+  snprintf(topic, sizeof(topic), "%s/uploadBackup", kMqttSystemTopic);
+  
+  // Publicar resultado
+  if (client_.publish(topic, payload.c_str())) {
+    LOGI("MQTT: Published backup result to %s: %s\n", topic, payload.c_str());
+    // Limpiar resultado pendiente de EEPROM
+    eeprom.clearPendingBackupResult();
+  } else {
+    LOGE("MQTT: Failed to publish backup result\n");
   }
 }

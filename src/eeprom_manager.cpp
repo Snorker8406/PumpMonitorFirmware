@@ -205,6 +205,48 @@ bool EepromManager::setDeviceID(int32_t id) {
   return true;
 }
 
+String EepromManager::getPendingBackupResult() {
+  if (!initialized_) {
+    return "";
+  }
+  return prefs_.getString(kKeyBackupResult, "");
+}
+
+bool EepromManager::setPendingBackupResult(const char* result) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set backup result\n");
+    return false;
+  }
+  
+  if (!result || strlen(result) == 0) {
+    return false;
+  }
+  
+  size_t written = prefs_.putString(kKeyBackupResult, result);
+  if (written == 0) {
+    LOGE("EEPROM: Failed to write backup result\n");
+    return false;
+  }
+  
+  LOGI("EEPROM: Backup result saved: %s\n", result);
+  return true;
+}
+
+void EepromManager::clearPendingBackupResult() {
+  if (!initialized_) {
+    return;
+  }
+  prefs_.remove(kKeyBackupResult);
+  LOGI("EEPROM: Backup result cleared\n");
+}
+
+bool EepromManager::hasPendingBackupResult() {
+  if (!initialized_) {
+    return false;
+  }
+  return prefs_.isKey(kKeyBackupResult);
+}
+
 void EepromManager::resetToDefaults() {
   if (!initialized_) {
     LOGE("EEPROM: Not initialized, cannot reset\n");
