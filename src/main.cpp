@@ -60,7 +60,6 @@ namespace {
 
 TaskHandle_t networkTaskHandle = nullptr;
 TaskHandle_t mqttTaskHandle = nullptr;
-TaskHandle_t modbusTaskHandle = nullptr;
 TaskHandle_t sdTaskHandle = nullptr;
 TaskHandle_t realTimeModbusTaskHandle = nullptr;
 TaskHandle_t instantValuesTaskHandle = nullptr;
@@ -127,50 +126,6 @@ void mqttTask(void *) {
   }
 }
 
-// ----- Modbus task -----
-
-void modbusTask(void *) {
-  auto &net = NetworkManager::instance();
-  auto &modbus = ModbusManager::instance();
-  auto &rtc = RtcManager::instance();
-  modbus.begin();
-
-  std::vector<ModbusDeviceData> devicesData;
-
-  for (;;) {
-    if (net.isConnected()) {
-      modbus.loop();
-      
-      // Leer dispositivos Modbus (thread-safe internamente)
-      bool readSuccess = modbus.readAllDevices(devicesData);
-      
-      if (readSuccess) {
-        // Mostrar datos en consola
-        for (const auto &device : devicesData) {
-          if (device.success) {
-            LOGI("[%s] Data: ", device.modbusModelName);
-            for (size_t i = 0; i < device.values.size(); i++) {
-              Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
-            }
-          } else {
-            LOGE("Modbus %s read failed, no data available\n", device.modbusModelName);
-          }
-        }
-      } else {
-        LOGE("Modbus read failed for all devices\n");
-      }
-      
-      // Liberar vectores y consolidar heap
-      devicesData.clear();
-      devicesData.shrink_to_fit();
-      
-      vTaskDelay(pdMS_TO_TICKS(kModbusReadPeriodMs));
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(1000));
-    }
-  }
-}
-
 // ----- Real Time Modbus task -----
 // Tarea independiente para publicar datos Modbus en tiempo real
 
@@ -178,6 +133,9 @@ void realTimeModbusTask(void *) {
   auto &modbus = ModbusManager::instance();
   auto &mqtt = MqttManager::instance();
   auto &net = NetworkManager::instance();
+  
+  // Inicializar Modbus aquí ya que no hay modbusTask separado
+  modbus.begin();
   
   vTaskDelay(pdMS_TO_TICKS(5000));  // Esperar inicialización
   
@@ -225,7 +183,11 @@ void realTimeModbusTask(void *) {
             
             // Publicar
             if (mqtt.publish(realTimeTopic, msgBuffer)) {
-              LOGI("RT: Published %s\n", device.modbusModelName);
+              // Imprimir valores float en consola
+              Serial.printf("[I] [%s] Data: ", device.modbusModelName);
+              for (size_t i = 0; i < device.values.size(); i++) {
+                Serial.printf("%.2f%s", device.values[i], (i < device.values.size() - 1) ? ", " : "\n");
+              }
             } else {
               LOGE("RT: Failed to publish %s (size: %u bytes)\n", device.modbusModelName, msgLen);
             }
@@ -428,15 +390,6 @@ void setup() {
       kMqttTaskCore);
 
   xTaskCreatePinnedToCore(
-      modbusTask,
-      "modbus-task",
-      kModbusTaskStackWords,
-      nullptr,
-      kModbusTaskPriority,
-      &modbusTaskHandle,
-      kModbusTaskCore);
-
-  xTaskCreatePinnedToCore(
       sdTask,
       "sd-task",
       kSdTaskStackWords,
@@ -450,7 +403,7 @@ void setup() {
       "realtime-task",
       kModbusTaskStackWords,
       nullptr,
-      kModbusTaskPriority - 1,  // Prioridad menor que modbus-task
+      kModbusTaskPriority,  // Prioridad normal
       &realTimeModbusTaskHandle,
       kModbusTaskCore);
 
@@ -459,7 +412,7 @@ void setup() {
       "instval-task",
       kModbusTaskStackWords,
       nullptr,
-      kModbusTaskPriority - 1,  // Prioridad menor que modbus-task
+      kModbusTaskPriority,  // Prioridad normal
       &instantValuesTaskHandle,
       kModbusTaskCore);
 
@@ -467,7 +420,6 @@ void setup() {
   // No incluimos mqttTaskHandle porque esa tarea maneja el OTA
   TaskHandle_t tasksToSuspend[] = {
     networkTaskHandle,
-    modbusTaskHandle,
     sdTaskHandle,
     realTimeModbusTaskHandle,
     instantValuesTaskHandle

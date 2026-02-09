@@ -123,6 +123,12 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Invalid Real Time duration (1-3600 seconds required)\n");
     }
   }
+  // Procesar reset: reiniciar el ESP
+  else if (strstr(topic, "/reset") != nullptr) {
+    LOGI("MQTT: Reset requested, restarting ESP...\n");
+    delay(500);
+    ESP.restart();
+  }
   // Procesar backupList: listar archivos de backup en una fecha específica
   else if (strstr(topic, "/backupList") != nullptr) {
     // El payload contiene año,mes (ej: "2026,01")
