@@ -476,14 +476,16 @@ void MqttManager::processPendingBackupUpload() {
            deviceId, pendingBackupDay_, pendingBackupMonth_, pendingBackupYear_, success ? 1 : 0);
   eeprom.setPendingBackupResult(resultPayload);
   
-  // Reanudar todas las tareas
-  ota.resumeAllTasks();
-  
   if (success) {
     LOGI("MQTT: Backup upload completed successfully\n");
   } else {
     LOGE("MQTT: Backup upload failed\n");
   }
+  
+  // Reiniciar el ESP para limpiar estado
+  LOGI("MQTT: Restarting ESP after backup upload...\n");
+  delay(500);
+  ESP.restart();
 }
 
 void MqttManager::publishStartingMessage(const char* macNoColon) {
