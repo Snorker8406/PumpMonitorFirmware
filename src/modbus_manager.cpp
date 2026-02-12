@@ -3,242 +3,118 @@
 #include "log.hpp"
 #include "network_manager.hpp"
 
-// Puntero global para callbacks (eModbus usa callbacks estáticos)
-static ModbusManager* gModbusInstance = nullptr;
+// ── Instancias estáticas del módulo (patrón del ejemplo funcional) ──
+static WiFiClient      s_tcpClient;
+static ModbusClientTCP s_mbClient(s_tcpClient);
 
 ModbusManager &ModbusManager::instance() {
   static ModbusManager inst;
-  gModbusInstance = &inst;
   return inst;
 }
 
 void ModbusManager::begin() {
-  // Crear mutex interno para serializar lecturas
-  internalMutex_ = xSemaphoreCreateMutex();
-  if (!internalMutex_) {
-    LOGE("Failed to create Modbus internal mutex\n");
+  mutex_ = xSemaphoreCreateMutex();
+  if (!mutex_) {
+    LOGE("Failed to create Modbus mutex\n");
   }
-  
-  // Crear e inicializar un cliente Modbus TCP por cada dispositivo
-  for (size_t i = 0; i < kModbusDeviceCount; i++) {
-    modbusClients_[i] = new ModbusClientTCP(tcpClients_[i]);
-    
-    // Configurar timeouts (en ms) - 8s timeout, 200ms intervalo
-    modbusClients_[i]->setTimeout(8000, 200);
-    
-    // Registrar callbacks usando lambdas que llaman a los métodos de instancia
-    modbusClients_[i]->onDataHandler([](ModbusMessage response, uint32_t token) {
-      if (gModbusInstance) {
-        gModbusInstance->handleData(response, token);
-      }
-    });
-    
-    modbusClients_[i]->onErrorHandler([](Error error, uint32_t token) {
-      if (gModbusInstance) {
-        gModbusInstance->handleError(error, token);
-      }
-    });
-    
-    // Iniciar el cliente (crea la tarea interna)
-    modbusClients_[i]->begin();
-    
-    initialized_[i] = false;
-  }
-  
-  LOGI("eModbus initialized with %u device clients\n", kModbusDeviceCount);
+
+  // Configurar timeout y intervalo mínimo entre requests
+  s_mbClient.setTimeout(kModbusTimeoutMs, kModbusIntervalMs);
+  s_mbClient.begin(kModbusTaskCore);
+
+  LOGI("eModbus initialized (syncRequest mode, timeout=%u ms, interval=%u ms)\n",
+       kModbusTimeoutMs, kModbusIntervalMs);
 }
 
 void ModbusManager::loop() {
-  // eModbus no requiere loop() - es completamente asíncrono
-}
-
-void ModbusManager::handleData(ModbusMessage response, uint32_t token) {
-  // Token contiene el índice del dispositivo
-  size_t deviceIndex = token;
-  
-  if (response.getError() == SUCCESS) {
-    // Extraer datos de la respuesta
-    // El primer byte es la longitud en bytes, los datos empiezan en índice 3
-    size_t numBytes = response[2];  // Byte count
-    size_t numRegs = numBytes / 2;
-    
-    // Copiar registros al buffer
-    for (size_t i = 0; i < numRegs && i < kMaxRegisters; i++) {
-      // Los registros están en big-endian en la respuesta Modbus
-      readBuffer_[i] = (response[3 + i*2] << 8) | response[3 + i*2 + 1];
-    }
-    
-    readLength_ = numRegs;
-    readSuccess_ = true;
-  } else {
-    LOGE("Modbus[%u] response error: %02X\n", deviceIndex, response.getError());
-    readSuccess_ = false;
-  }
-  
-  readComplete_ = true;
-}
-
-void ModbusManager::handleError(Error error, uint32_t token) {
-  size_t deviceIndex = token;
-  LOGE("Modbus[%u] error: %02X\n", deviceIndex, static_cast<int>(error));
-  readSuccess_ = false;
-  readComplete_ = true;
+  // No-op: syncRequest maneja todo internamente
 }
 
 bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, std::vector<uint16_t> *rawData) {
   if (deviceIndex >= kModbusDeviceCount) {
     return false;
   }
-  
+
   if (!NetworkManager::instance().isConnected()) {
     return false;
   }
-  
-  // Adquirir mutex interno para serializar acceso a estado compartido
-  if (xSemaphoreTake(internalMutex_, pdMS_TO_TICKS(10000)) != pdTRUE) {
-    LOGE("Modbus[%u] internal mutex timeout\n", deviceIndex);
+
+  // Serializar acceso al cliente compartido
+  if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(15000)) != pdTRUE) {
+    LOGE("Modbus[%u] mutex timeout\n", deviceIndex);
     return false;
   }
-  
+
   const auto &config = kModbusDevices[deviceIndex];
-  ModbusClientTCP* client = modbusClients_[deviceIndex];
-  
+
   values.clear();
-  values.reserve(config.totalRegs / 2);
-  
   if (rawData) {
     rawData->clear();
-    rawData->reserve(config.totalRegs);
   }
-  
-  // Conectar si no está conectado
-  if (!initialized_[deviceIndex]) {
-    LOGI("Modbus[%u] connecting to %s (%u.%u.%u.%u)...\n", 
+
+  // Apuntar al dispositivo destino
+  s_mbClient.setTarget(config.ip, 502);
+
+  // Function code según tipo de registro
+  uint8_t fc = (config.regType == ModbusRegisterType::HOLDING_REGISTER)
+                 ? READ_HOLD_REGISTER
+                 : READ_INPUT_REGISTER;
+
+  // Lectura síncrona bloqueante (bloquea esta tarea hasta respuesta o timeout)
+  uint32_t tok = ++token_;
+  ModbusMessage response = s_mbClient.syncRequest(
+    tok,
+    config.unitId,
+    fc,
+    config.startReg,
+    config.totalRegs
+  );
+
+  // Verificar error
+  Error err = response.getError();
+  if (err != SUCCESS) {
+    ModbusError me(err);
+    LOGE("Modbus[%u] %s (%u.%u.%u.%u): error %02X - %s\n",
          deviceIndex, config.modbusModelName,
-         config.ip[0], config.ip[1], config.ip[2], config.ip[3]);
-    
-    // Conectar el cliente TCP primero
-    if (!tcpClients_[deviceIndex].connect(config.ip, 502)) {
-      LOGE("Modbus[%u] TCP connection failed\n", deviceIndex);
-      xSemaphoreGive(internalMutex_);
-      return false;
-    }
-    
-    // Configurar el target del cliente Modbus
-    client->setTarget(config.ip, 502);
-    initialized_[deviceIndex] = true;
-    
-    vTaskDelay(pdMS_TO_TICKS(100));  // Dar tiempo a estabilizar conexión
-  }
-  
-  // Verificar que el TCP sigue conectado
-  if (!tcpClients_[deviceIndex].connected()) {
-    LOGW("Modbus[%u] TCP disconnected, reconnecting...\n", deviceIndex);
-    initialized_[deviceIndex] = false;
-    
-    if (!tcpClients_[deviceIndex].connect(config.ip, 502)) {
-      LOGE("Modbus[%u] TCP reconnection failed\n", deviceIndex);
-      xSemaphoreGive(internalMutex_);
-      return false;
-    }
-    
-    client->setTarget(config.ip, 502);
-    initialized_[deviceIndex] = true;
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-  
-  // Buffer temporal para acumular todos los registros
-  std::vector<uint16_t> allRegs;
-  allRegs.reserve(config.totalRegs);
-  
-  uint16_t offset = 0;
-  bool success = true;
-  
-  // Leer en chunks
-  while (offset < config.totalRegs) {
-    const uint16_t regsToRead = std::min(static_cast<uint16_t>(kModbusChunkSize), 
-                                          static_cast<uint16_t>(config.totalRegs - offset));
-    
-    // Resetear estado
-    readComplete_ = false;
-    readSuccess_ = false;
-    readLength_ = 0;
-    memset(readBuffer_, 0, sizeof(readBuffer_));
-    
-    // Enviar request según tipo de registro
-    Error err;
-    if (config.regType == ModbusRegisterType::HOLDING_REGISTER) {
-      err = client->addRequest(deviceIndex, config.unitId, READ_HOLD_REGISTER, 
-                               config.startReg + offset, regsToRead);
-    } else {
-      err = client->addRequest(deviceIndex, config.unitId, READ_INPUT_REGISTER, 
-                               config.startReg + offset, regsToRead);
-    }
-    
-    if (err != SUCCESS) {
-      LOGE("Modbus[%u] request error at offset %u: %02X\n", deviceIndex, offset, static_cast<int>(err));
-      success = false;
-      break;
-    }
-    
-    // Esperar respuesta con timeout (8 segundos)
-    unsigned long startMs = millis();
-    while (!readComplete_ && (millis() - startMs) < 8000) {
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    
-    if (!readComplete_) {
-      LOGE("Modbus[%u] timeout at offset %u\n", deviceIndex, offset);
-      // Forzar reconexión para limpiar estado
-      tcpClients_[deviceIndex].stop();
-      initialized_[deviceIndex] = false;
-      success = false;
-      break;
-    }
-    
-    if (!readSuccess_) {
-      LOGE("Modbus[%u] read failed at offset %u\n", deviceIndex, offset);
-      // Forzar reconexión para limpiar estado
-      tcpClients_[deviceIndex].stop();
-      initialized_[deviceIndex] = false;
-      success = false;
-      break;
-    }
-    
-    // Agregar registros leídos al buffer total
-    for (size_t i = 0; i < readLength_; i++) {
-      allRegs.push_back(readBuffer_[i]);
-    }
-    
-    offset += regsToRead;
-    
-    // Delay entre chunks
-    if (offset < config.totalRegs) {
-      vTaskDelay(pdMS_TO_TICKS(kModbusChunkDelayMs));
-    }
-  }
-  
-  // Liberar mutex antes de retornar
-  xSemaphoreGive(internalMutex_);
-  
-  if (!success) {
+         config.ip[0], config.ip[1], config.ip[2], config.ip[3],
+         (int)err, (const char *)me);
+    xSemaphoreGive(mutex_);
     return false;
   }
-  
+
+  // Extraer byte count (posición 2 del mensaje)
+  uint8_t byteCount = 0;
+  response.get(2, byteCount);
+  uint16_t regsReceived = byteCount / 2;
+
+  // Extraer registros raw
+  std::vector<uint16_t> allRegs;
+  allRegs.reserve(regsReceived);
+
+  for (uint16_t i = 0; i < regsReceived; i++) {
+    uint16_t regVal = 0;
+    response.get(3 + i * 2, regVal);
+    allRegs.push_back(regVal);
+  }
+
+  // Liberar mutex después de la lectura
+  xSemaphoreGive(mutex_);
+
   // Guardar datos raw si se solicitan
   if (rawData) {
     *rawData = allRegs;
   }
-  
+
   // Convertir pares de registros a floats
+  values.reserve(allRegs.size() / 2);
   for (size_t i = 0; i + 1 < allRegs.size(); i += 2) {
-    float value = regsToFloat(allRegs[i], allRegs[i + 1]);
-    values.push_back(value);
+    float val = regsToFloat(allRegs[i], allRegs[i + 1]);
+    values.push_back(val);
   }
-  
-  LOGD("Modbus[%u] read %u regs, %u floats from %s\n", 
+
+  LOGD("Modbus[%u] read %u regs, %u floats from %s\n",
        deviceIndex, allRegs.size(), values.size(), config.modbusModelName);
-  
+
   return true;
 }
 
@@ -254,16 +130,16 @@ bool ModbusManager::readAllDevices(std::vector<ModbusDeviceData> &devicesData) {
     data.modbusModelName = config.modbusModelName;
     data.ip = config.ip;
     data.success = readDevice(i, data.values, &data.rawData);
-    
+
     if (!data.success) {
       allSuccess = false;
-      LOGE("Failed to read %s (%u.%u.%u.%u)\n", config.modbusModelName, 
+      LOGE("Failed to read %s (%u.%u.%u.%u)\n", config.modbusModelName,
            config.ip[0], config.ip[1], config.ip[2], config.ip[3]);
     }
-    
+
     devicesData.push_back(data);
-    
-    // Delay entre dispositivos
+
+    // Pausa entre dispositivos para no saturar la red
     if (i < kModbusDeviceCount - 1) {
       vTaskDelay(pdMS_TO_TICKS(kModbusInterDeviceDelayMs));
     }
