@@ -105,10 +105,12 @@ bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, s
     *rawData = allRegs;
   }
 
-  // Convertir pares de registros a floats
+  // Convertir pares de registros a floats (respetando word order del dispositivo)
   values.reserve(allRegs.size() / 2);
   for (size_t i = 0; i + 1 < allRegs.size(); i += 2) {
-    float val = regsToFloat(allRegs[i], allRegs[i + 1]);
+    float val = config.swapWords
+      ? regsToFloat(allRegs[i + 1], allRegs[i])    // CD AB (Little-Endian words)
+      : regsToFloat(allRegs[i],     allRegs[i + 1]); // AB CD (Big-Endian words)
     values.push_back(val);
   }
 
