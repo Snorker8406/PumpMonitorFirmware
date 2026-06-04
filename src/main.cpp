@@ -8,6 +8,8 @@
 #include "sd_manager.hpp"
 #include "eeprom_manager.hpp"
 #include "ota_manager.hpp"
+#include "actuator_manager.hpp"
+#include "modbus_server_manager.hpp"
 #include "log.hpp"
 
 // Forward declarations para funciones de control de Real Time
@@ -63,6 +65,8 @@ TaskHandle_t mqttTaskHandle = nullptr;
 TaskHandle_t sdTaskHandle = nullptr;
 TaskHandle_t realTimeModbusTaskHandle = nullptr;
 TaskHandle_t instantValuesTaskHandle = nullptr;
+TaskHandle_t actuatorTaskHandle = nullptr;
+TaskHandle_t modbusServerTaskHandle = nullptr;
 
 // ----- Network monitor task -----
 
@@ -342,6 +346,39 @@ void instantValuesTask(void *) {
   }
 }
 
+// Task de control de actuadores: procesa escrituras de coils pendientes
+void actuatorTask(void *) {
+  auto &net = NetworkManager::instance();
+  auto &actuator = ActuatorManager::instance();
+
+  for (;;) {
+    if (net.isConnected()) {
+      actuator.process();
+    }
+    vTaskDelay(pdMS_TO_TICKS(kActuatorTaskPeriodMs));
+  }
+}
+
+// Task del servidor Modbus: imprime por consola los registros recibidos
+void modbusServerTask(void *) {
+  auto &server = ModbusServerManager::instance();
+  uint16_t prevClients = 0;
+
+  for (;;) {
+    uint16_t clients = server.activeClients();
+    if (clients != prevClients) {
+      if (clients > prevClients) {
+        LOGI("Modbus Server: cliente conectado (%u activos)\n", clients);
+      } else {
+        LOGI("Modbus Server: cliente desconectado (%u activos)\n", clients);
+      }
+      prevClients = clients;
+    }
+    server.process();
+    vTaskDelay(pdMS_TO_TICKS(kModbusServerTaskPeriodMs));
+  }
+}
+
 }  // namespace
 
 void setup() {
@@ -369,6 +406,12 @@ void setup() {
 
   // Inicializar Modbus (syncRequest mode)
   ModbusManager::instance().begin();
+
+  // Inicializar control de actuadores (coils)
+  ActuatorManager::instance().begin();
+
+  // Inicializar servidor Modbus TCP (esclavo)
+  ModbusServerManager::instance().begin();
 
   // ----- Task creation -----
   xTaskCreatePinnedToCore(
@@ -416,13 +459,33 @@ void setup() {
       &instantValuesTaskHandle,
       kModbusTaskCore);
 
+  xTaskCreatePinnedToCore(
+      actuatorTask,
+      "actuator-task",
+      kActuatorTaskStackWords,
+      nullptr,
+      kActuatorTaskPriority,
+      &actuatorTaskHandle,
+      kActuatorTaskCore);
+
+  xTaskCreatePinnedToCore(
+      modbusServerTask,
+      "mbserver-task",
+      kModbusServerTaskStackWords,
+      nullptr,
+      kModbusServerTaskPriority,
+      &modbusServerTaskHandle,
+      kModbusServerTaskCore);
+
   // Registrar tareas con OtaManager para suspenderlas durante actualizaciones
   // No incluimos mqttTaskHandle porque esa tarea maneja el OTA
   TaskHandle_t tasksToSuspend[] = {
     networkTaskHandle,
     sdTaskHandle,
     realTimeModbusTaskHandle,
-    instantValuesTaskHandle
+    instantValuesTaskHandle,
+    actuatorTaskHandle,
+    modbusServerTaskHandle
   };
   OtaManager::instance().registerTasks(tasksToSuspend, sizeof(tasksToSuspend) / sizeof(tasksToSuspend[0]));
 }

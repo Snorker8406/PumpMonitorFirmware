@@ -10,6 +10,8 @@
 #include "app_config.hpp"
 #include "ota_manager.hpp"
 #include "sd_manager.hpp"
+#include "modbus_manager.hpp"
+#include "actuator_manager.hpp"
 
 // Forward declarations de funciones de control de Real Time
 extern void startRealTimeMode(uint32_t durationSeconds);
@@ -171,6 +173,95 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     
     // Guardar parámetros para procesar fuera del callback
     MqttManager::instance().requestBackupUpload(year, month, day);
+  }
+  // Procesar writeRegister: escribir un Holding Register por Modbus (FC06)
+  // Payload: deviceIndex,address,value  (ej: "1,0,10" escribe 10 en addr 0 del dispositivo 1)
+  else if (strstr(topic, "/writeRegister") != nullptr) {
+    unsigned int devIdx, addr;
+    char valStr[32] = {0};
+    int parsed = sscanf(msg, "%u,%u,%31s", &devIdx, &addr, valStr);
+    
+    if (parsed != 3) {
+      LOGE("MQTT: Invalid writeRegister format. Expected: deviceIndex,address,value\n");
+      return;
+    }
+    
+    if (addr > 65535) {
+      LOGE("MQTT: writeRegister address out of uint16 range\n");
+      return;
+    }
+    
+    auto &modbus = ModbusManager::instance();
+    bool ok = modbus.writeRegister(devIdx, (uint16_t)addr, valStr);
+    
+    if (ok) {
+      LOGI("MQTT: writeRegister device=%u addr=%u val=%s OK\n", devIdx, addr, valStr);
+    } else {
+      LOGE("MQTT: writeRegister device=%u addr=%u val=%s FAILED\n", devIdx, addr, valStr);
+    }
+  }
+  // Procesar writeCoil: escribir un Single Coil por Modbus (FC05)
+  // Payload: deviceIndex,address,value  (ej: "1,0,1" activa coil 0 del dispositivo 1)
+  else if (strstr(topic, "/writeCoil") != nullptr) {
+    unsigned int devIdx, addr;
+    char valStr[32] = {0};
+    int parsed = sscanf(msg, "%u,%u,%31s", &devIdx, &addr, valStr);
+    
+    if (parsed != 3) {
+      LOGE("MQTT: Invalid writeCoil format. Expected: deviceIndex,address,value (1/0 or FF00/0000)\n");
+      return;
+    }
+    
+    if (addr > 65535) {
+      LOGE("MQTT: writeCoil address out of uint16 range\n");
+      return;
+    }
+    
+    auto &modbus = ModbusManager::instance();
+    bool ok = modbus.writeCoil(devIdx, (uint16_t)addr, valStr);
+    
+    if (ok) {
+      LOGI("MQTT: writeCoil device=%u addr=%u val=%s OK\n", devIdx, addr, valStr);
+    } else {
+      LOGE("MQTT: writeCoil device=%u addr=%u val=%s FAILED\n", devIdx, addr, valStr);
+    }
+  }
+  // Procesar confirmCoil: establecer una confirmación de un coil del actuador
+  // Payload: coilIndex,confirmIndex,value  (ej: "0,2,1")
+  else if (strstr(topic, "/confirmCoil") != nullptr) {
+    unsigned int coilIdx, confirmIdx, val;
+    int parsed = sscanf(msg, "%u,%u,%u", &coilIdx, &confirmIdx, &val);
+    if (parsed != 3) {
+      LOGE("MQTT: Invalid confirmCoil format. Expected: coilIndex,confirmIndex,value\n");
+      return;
+    }
+    ActuatorManager::instance().setConfirmation(coilIdx, (uint8_t)confirmIdx, val != 0);
+  }
+  // Procesar setCoil: solicitar escritura directa de un coil del actuador
+  // Payload: coilIndex,value  (ej: "0,1")
+  else if (strstr(topic, "/setCoil") != nullptr) {
+    unsigned int coilIdx, val;
+    int parsed = sscanf(msg, "%u,%u", &coilIdx, &val);
+    if (parsed != 2) {
+      LOGE("MQTT: Invalid setCoil format. Expected: coilIndex,value\n");
+      return;
+    }
+    ActuatorManager::instance().requestCoil(coilIdx, val != 0);
+  }
+  // Procesar coilConfirmEnable: activar/desactivar confirmaciones de un coil
+  // Payload: coilIndex,value  (ej: "0,1")
+  else if (strstr(topic, "/coilConfirmEnable") != nullptr) {
+    unsigned int coilIdx, val;
+    int parsed = sscanf(msg, "%u,%u", &coilIdx, &val);
+    if (parsed != 2) {
+      LOGE("MQTT: Invalid coilConfirmEnable format. Expected: coilIndex,value\n");
+      return;
+    }
+    ActuatorManager::instance().setConfirmationsEnabled(coilIdx, val != 0);
+  }
+  // Procesar statusCoils: publicar el estado de todas las coils
+  else if (strstr(topic, "/statusCoils") != nullptr) {
+    ActuatorManager::instance().publishAllStatus();
   }
   // Procesar installFirmware: marcar para actualizar firmware (se procesa fuera del callback)
   else if (strstr(topic, "/installFirmware") != nullptr) {

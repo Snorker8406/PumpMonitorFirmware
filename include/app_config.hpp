@@ -75,8 +75,9 @@ struct ModbusDeviceConfig {
 
 // Lista de dispositivos Modbus a leer (hasta 120 registros por dispositivo)
 static const ModbusDeviceConfig kModbusDevices[] = {
-  {IPAddress(192, 168, 1, 11), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, false, 1, "Device_1"},
-  {IPAddress(192, 168, 1, 23), 1, 0, 6, ModbusRegisterType::HOLDING_REGISTER, true,  3, "Device_2"},
+  {IPAddress(192, 168, 1, 200), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, false, 1, "Device_1"},
+  //                ip               unitId  startReg  totalRegs  regType                          swapWords  modelId  modelName
+  {IPAddress(192, 168, 1, 101),      1,      0,        8,         ModbusRegisterType::HOLDING_REGISTER, true,  3,       "Device_2"},
   // Ejemplo con más registros: {IPAddress(192, 168, 1, 12), 1, 0, 120, ModbusRegisterType::HOLDING_REGISTER, 3, "Device_3"},
 };
 constexpr size_t kModbusDeviceCount = sizeof(kModbusDevices) / sizeof(kModbusDevices[0]);
@@ -90,6 +91,30 @@ constexpr uint32_t kModbusInterDeviceDelayMs = 500;  // Delay entre dispositivos
 constexpr uint32_t kModbusTaskStackWords = 10240;  // Stack para manejar hasta 120 registros por dispositivo
 constexpr UBaseType_t kModbusTaskPriority = 1;
 constexpr BaseType_t kModbusTaskCore = APP_CPU_NUM;  // Core 1 para lógica
+
+// ── Actuadores (control de Coils con confirmaciones) ──
+constexpr size_t kActuatorCoilCount = 4;               // Número de coils controlables
+constexpr uint8_t kActuatorConfirmCount = 3;           // Confirmaciones (booleanos) por coil
+// Activar/desactivar el mecanismo de confirmaciones por cada coil (un valor por coil)
+static constexpr bool kActuatorConfirmationsEnabled[kActuatorCoilCount] = {true, true, true, true};
+constexpr size_t kActuatorModbusDeviceIndex = 0;       // Índice del dispositivo Modbus destino para los coils
+// Dirección Modbus de cada coil (debe tener kActuatorCoilCount elementos)
+static constexpr uint16_t kActuatorCoilAddresses[kActuatorCoilCount] = {0, 1, 2, 3};
+constexpr uint32_t kActuatorTaskStackWords = 4096;
+constexpr UBaseType_t kActuatorTaskPriority = 1;
+constexpr BaseType_t kActuatorTaskCore = APP_CPU_NUM;  // Core 1
+constexpr uint32_t kActuatorTaskPeriodMs = 100;        // Periodo de evaluación de escrituras pendientes
+
+// ── Modbus Server (esclavo TCP: dispositivos externos escriben en este device) ──
+constexpr uint8_t kModbusServerUnitId = 1;             // Unit/Server ID que atiende este device
+constexpr uint16_t kModbusServerPort = 502;            // Puerto TCP de escucha (estándar Modbus = 502)
+constexpr uint8_t kModbusServerMaxClients = 4;         // Conexiones simultáneas permitidas
+constexpr uint32_t kModbusServerTimeoutMs = 10000;     // Timeout de inactividad por cliente (ms)
+constexpr uint16_t kModbusServerRegCount = 32;         // Holding registers expuestos (direcciones 0..N-1)
+constexpr uint32_t kModbusServerTaskStackWords = 4096;
+constexpr UBaseType_t kModbusServerTaskPriority = 1;
+constexpr BaseType_t kModbusServerTaskCore = APP_CPU_NUM;  // Core 1
+constexpr uint32_t kModbusServerTaskPeriodMs = 50;     // Periodo de impresión de escrituras recibidas
 
 // SD Card SPI
 constexpr int kSdCsPin = 2;

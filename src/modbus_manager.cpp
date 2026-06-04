@@ -158,3 +158,109 @@ float ModbusManager::regsToFloat(uint16_t reg1, uint16_t reg2) {
   converter.i = (static_cast<uint32_t>(reg1) << 16) | reg2;
   return converter.f;
 }
+
+bool ModbusManager::writeRegister(size_t deviceIndex, uint16_t address, const char* value) {
+  if (deviceIndex >= kModbusDeviceCount) {
+    LOGE("writeRegister: invalid device index %u\n", deviceIndex);
+    return false;
+  }
+
+  if (!value) {
+    LOGE("writeRegister: null value\n");
+    return false;
+  }
+
+  uint16_t regValue = (uint16_t)strtoul(value, nullptr, 16);
+
+  if (!NetworkManager::instance().isConnected()) {
+    return false;
+  }
+
+  if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(15000)) != pdTRUE) {
+    LOGE("writeRegister: mutex timeout\n");
+    return false;
+  }
+
+  const auto &config = kModbusDevices[deviceIndex];
+  s_mbClient.setTarget(config.ip, 502);
+
+  uint32_t tok = ++token_;
+  ModbusMessage response = s_mbClient.syncRequest(
+    tok,
+    config.unitId,
+    WRITE_HOLD_REGISTER,
+    address,
+    regValue
+  );
+
+  xSemaphoreGive(mutex_);
+
+  Error err = response.getError();
+  if (err != SUCCESS) {
+    ModbusError me(err);
+    LOGE("writeRegister[%u] %s addr=%u val=%s: error %02X - %s\n",
+         deviceIndex, config.modbusModelName, address, value,
+         (int)err, (const char *)me);
+    return false;
+  }
+
+  LOGI("writeRegister[%u] %s addr=%u val=%s OK\n",
+       deviceIndex, config.modbusModelName, address, value);
+  return true;
+}
+
+bool ModbusManager::writeCoil(size_t deviceIndex, uint16_t address, const char* value) {
+  if (deviceIndex >= kModbusDeviceCount) {
+    LOGE("writeCoil: invalid device index %u\n", deviceIndex);
+    return false;
+  }
+
+  if (!value) {
+    LOGE("writeCoil: null value\n");
+    return false;
+  }
+
+  // Interpretar valor: "1" o "FF00" = ON (0xFF00), cualquier otra cosa = OFF (0x0000)
+  uint16_t coilValue;
+  if (strcmp(value, "1") == 0 || strcasecmp(value, "FF00") == 0) {
+    coilValue = 0xFF00;
+  } else {
+    coilValue = 0x0000;
+  }
+
+  if (!NetworkManager::instance().isConnected()) {
+    return false;
+  }
+
+  if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(15000)) != pdTRUE) {
+    LOGE("writeCoil: mutex timeout\n");
+    return false;
+  }
+
+  const auto &config = kModbusDevices[deviceIndex];
+  s_mbClient.setTarget(config.ip, 502);
+
+  uint32_t tok = ++token_;
+  ModbusMessage response = s_mbClient.syncRequest(
+    tok,
+    config.unitId,
+    WRITE_COIL,
+    address,
+    coilValue
+  );
+
+  xSemaphoreGive(mutex_);
+
+  Error err = response.getError();
+  if (err != SUCCESS) {
+    ModbusError me(err);
+    LOGE("writeCoil[%u] %s addr=%u val=%s: error %02X - %s\n",
+         deviceIndex, config.modbusModelName, address, value,
+         (int)err, (const char *)me);
+    return false;
+  }
+
+  LOGI("writeCoil[%u] %s addr=%u val=%s (0x%04X) OK\n",
+       deviceIndex, config.modbusModelName, address, value, coilValue);
+  return true;
+}

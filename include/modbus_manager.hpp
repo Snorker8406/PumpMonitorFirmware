@@ -26,6 +26,13 @@ class ModbusManager {
   bool readDevice(size_t deviceIndex, std::vector<float> &values, std::vector<uint16_t> *rawData = nullptr);
   bool readAllDevices(std::vector<ModbusDeviceData> &devicesData);
 
+  // Escritura síncrona de un solo Holding Register (FC06)
+  bool writeRegister(size_t deviceIndex, uint16_t address, const char* value);
+
+  // Escritura síncrona de un solo Coil (FC05)
+  // value: "1"/"FF00" = ON, "0"/"0000" = OFF
+  bool writeCoil(size_t deviceIndex, uint16_t address, const char* value);
+
  private:
   ModbusManager() = default;
   static float regsToFloat(uint16_t reg1, uint16_t reg2);
