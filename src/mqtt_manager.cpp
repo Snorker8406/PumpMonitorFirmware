@@ -413,6 +413,37 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to publish modbusDevices\n");
     }
   }
+  // Procesar cleanModbusDevices: vaciar la lista de dispositivos Modbus de la EEPROM
+  // y del array en ejecucion (payload: cualquiera).
+  // Tras el borrado publica la lista (ahora vacia) en device/{MAC}_var/modbusDevices
+  // para confirmar el resultado.
+  else if (strstr(topic, "/cleanModbusDevices") != nullptr) {
+    if (eeprom.clearModbusDevices()) {
+      LOGI("MQTT: Modbus devices cleared\n");
+    } else {
+      LOGE("MQTT: Failed to clear Modbus devices\n");
+    }
+
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') macNoColon[idx++] = *p;
+    }
+
+    char devBuf[640];
+    buildModbusDevicesString(devBuf, sizeof(devBuf));
+
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/modbusDevices", macNoColon);
+
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, devBuf)) {
+      LOGI("MQTT: Published modbusDevices (%u devices)\n", (unsigned)eeprom.getModbusDeviceCount());
+    } else {
+      LOGE("MQTT: Failed to publish modbusDevices\n");
+    }
+  }
   // Procesar getActuators: devolver la configuracion actual de los actuadores (coils)
   // Response topic: device/{MAC}_var/actuators
   // Payload: coilIndex,modbusAddress,confirmationsEnabled;...

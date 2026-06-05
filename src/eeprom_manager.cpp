@@ -393,3 +393,15 @@ bool EepromManager::setModbusDevices(const ModbusDeviceConfig* devices, size_t c
   }
   return saveModbusDevices();
 }
+
+bool EepromManager::clearModbusDevices() {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot clear Modbus devices\n");
+    return false;
+  }
+  modbusDeviceCount_ = 0;
+  prefs_.putUChar(kKeyModbusCount, 0);
+  prefs_.remove(kKeyModbusDevs);
+  LOGI("EEPROM: Modbus devices cleared\n");
+  return true;
+}

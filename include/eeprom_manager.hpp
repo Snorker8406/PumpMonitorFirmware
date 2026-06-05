@@ -40,6 +40,8 @@ class EepromManager {
   const ModbusDeviceConfig& getModbusDevice(size_t index) const;
   // Reemplaza la lista completa y la persiste en EEPROM.
   bool setModbusDevices(const ModbusDeviceConfig* devices, size_t count);
+  // Vacía la lista de dispositivos Modbus (count = 0) y la persiste en EEPROM.
+  bool clearModbusDevices();
   
   // Resetear a valores por defecto
   void resetToDefaults();
