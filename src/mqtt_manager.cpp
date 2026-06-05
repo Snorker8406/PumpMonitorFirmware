@@ -53,6 +53,47 @@ void buildAllVariablesJson(char* buffer, size_t bufferSize, const char* macNoCol
            deviceId,
            deviceTime.c_str());
 }
+
+// Construye el payload compacto de dispositivos Modbus en el buffer dado.
+// Formato: ip,unitId,startReg,totalRegs,regType,swapWords,modelId,modelName;...
+// regType: 0=HOLDING_REGISTER, 1=INPUT_REGISTER
+void buildModbusDevicesString(char* buffer, size_t bufferSize) {
+  auto &eeprom = EepromManager::instance();
+  size_t count = eeprom.getModbusDeviceCount();
+  buffer[0] = '\0';
+  size_t offset = 0;
+  for (size_t i = 0; i < count && offset < bufferSize - 1; ++i) {
+    const ModbusDeviceConfig& d = eeprom.getModbusDevice(i);
+    uint8_t rt = (d.regType == ModbusRegisterType::INPUT_REGISTER) ? 1 : 0;
+    int written = snprintf(buffer + offset, bufferSize - offset,
+                           "%s%u.%u.%u.%u,%u,%u,%u,%u,%u,%u,%s",
+                           (i > 0) ? ";" : "",
+                           d.ip[0], d.ip[1], d.ip[2], d.ip[3],
+                           d.unitId, d.startReg, d.totalRegs,
+                           rt, (unsigned)(d.swapWords ? 1 : 0),
+                           d.modbusModelId,
+                           d.modbusModelName ? d.modbusModelName : "");
+    if (written > 0) offset += (size_t)written;
+  }
+}
+
+// Construye el payload compacto de los actuadores (coils) en el buffer dado.
+// Formato: coilIndex,modbusAddress,confirmationsEnabled;...
+// Ej: "0,0,1;1,1,1;2,2,0;3,3,1"
+void buildActuatorsString(char* buffer, size_t bufferSize) {
+  buffer[0] = '\0';
+  size_t offset = 0;
+  for (size_t i = 0; i < kActuatorCoilCount && offset < bufferSize - 1; ++i) {
+    bool enabled = ActuatorManager::instance().confirmationsEnabled(i);
+    int written = snprintf(buffer + offset, bufferSize - offset,
+                           "%s%u,%u,%u",
+                           (i > 0) ? ";" : "",
+                           (unsigned)i,
+                           (unsigned)kActuatorCoilAddresses[i],
+                           (unsigned)(enabled ? 1 : 0));
+    if (written > 0) offset += (size_t)written;
+  }
+}
 }
 
 MqttManager &MqttManager::instance() {
@@ -348,6 +389,54 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Invalid saveModbusDevices payload\n");
     }
   }
+  // Procesar getModbusDevices: devolver la lista actual de dispositivos Modbus guardada en EEPROM
+  // Response topic: device/{MAC}_var/modbusDevices
+  // Payload: mismo formato compacto que saveModbusDevices
+  else if (strstr(topic, "/getModbusDevices") != nullptr) {
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') macNoColon[idx++] = *p;
+    }
+
+    char devBuf[640];
+    buildModbusDevicesString(devBuf, sizeof(devBuf));
+
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/modbusDevices", macNoColon);
+
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, devBuf)) {
+      LOGI("MQTT: Published modbusDevices (%u devices)\n", (unsigned)eeprom.getModbusDeviceCount());
+    } else {
+      LOGE("MQTT: Failed to publish modbusDevices\n");
+    }
+  }
+  // Procesar getActuators: devolver la configuracion actual de los actuadores (coils)
+  // Response topic: device/{MAC}_var/actuators
+  // Payload: coilIndex,modbusAddress,confirmationsEnabled;...
+  else if (strstr(topic, "/getActuators") != nullptr) {
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') macNoColon[idx++] = *p;
+    }
+
+    char actBuf[256];
+    buildActuatorsString(actBuf, sizeof(actBuf));
+
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/actuators", macNoColon);
+
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, actBuf)) {
+      LOGI("MQTT: Published actuators (%u coils)\n", (unsigned)kActuatorCoilCount);
+    } else {
+      LOGE("MQTT: Failed to publish actuators\n");
+    }
+  }
   // Procesar installFirmware: marcar para actualizar firmware (se procesa fuera del callback)
   else if (strstr(topic, "/installFirmware") != nullptr) {
     // El payload contiene la versión a instalar
@@ -400,6 +489,18 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     else if (strcmp(varName, "deviceTime") == 0) {
       value = getDeviceTimeString();
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/deviceTime", macNoColon);
+    }
+    else if (strcmp(varName, "modbusDevices") == 0) {
+      char devBuf[640];
+      buildModbusDevicesString(devBuf, sizeof(devBuf));
+      value = String(devBuf);
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/modbusDevices", macNoColon);
+    }
+    else if (strcmp(varName, "actuators") == 0) {
+      char actBuf[256];
+      buildActuatorsString(actBuf, sizeof(actBuf));
+      value = String(actBuf);
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/actuators", macNoColon);
     }
     else {
       LOGW("MQTT: Unknown variable requested: %s\n", varName);

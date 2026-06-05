@@ -82,16 +82,16 @@ constexpr size_t kModbusModelNameLen = 24;       // Longitud máxima del nombre 
 // activa se lee desde EEPROM mediante EepromManager (configurable, no hardcoded).
 static const ModbusDeviceConfig kDefaultModbusDevices[] = {
   {IPAddress(192, 168, 1, 200), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, false, 1, "Device_1"},
-  //                ip               unitId  startReg  totalRegs  regType                          swapWords  modelId  modelName
-  {IPAddress(192, 168, 1, 101),      1,      0,        8,         ModbusRegisterType::HOLDING_REGISTER, true,  3,       "Device_2"},
+  //                ip               unitId  startReg  totalRegs  regType                          swapWords  deviceModbusModelId  modelName
+  {IPAddress(192, 168, 1, 101),      1,      0,        8,         ModbusRegisterType::HOLDING_REGISTER, true,  2,       "Device_2"},
 };
 constexpr size_t kDefaultModbusDeviceCount = sizeof(kDefaultModbusDevices) / sizeof(kDefaultModbusDevices[0]);
 
 // ── Lista hardcoded original (DESACTIVADA: ahora la lista se lee desde EEPROM) ──
 // static const ModbusDeviceConfig kModbusDevices[] = {
 //   {IPAddress(192, 168, 1, 200), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, false, 1, "Device_1"},
-//   //                ip               unitId  startReg  totalRegs  regType                          swapWords  modelId  modelName
-//   {IPAddress(192, 168, 1, 101),      1,      0,        8,         ModbusRegisterType::HOLDING_REGISTER, true,  3,       "Device_2"},
+//   //                ip               unitId  startReg  totalRegs  regType                          swapWords  deviceModbusModelId  modelName
+//   {IPAddress(192, 168, 1, 101),      1,      0,        8,         ModbusRegisterType::HOLDING_REGISTER, true,  2,       "Device_2"},
 //   // Ejemplo con más registros: {IPAddress(192, 168, 1, 12), 1, 0, 120, ModbusRegisterType::HOLDING_REGISTER, 3, "Device_3"},
 // };
 // constexpr size_t kModbusDeviceCount = sizeof(kModbusDevices) / sizeof(kModbusDevices[0]);
