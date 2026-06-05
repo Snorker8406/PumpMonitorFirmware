@@ -1,5 +1,6 @@
 #include "modbus_manager.hpp"
 
+#include "eeprom_manager.hpp"
 #include "log.hpp"
 #include "network_manager.hpp"
 
@@ -31,7 +32,7 @@ void ModbusManager::loop() {
 }
 
 bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, std::vector<uint16_t> *rawData) {
-  if (deviceIndex >= kModbusDeviceCount) {
+  if (deviceIndex >= EepromManager::instance().getModbusDeviceCount()) {
     return false;
   }
 
@@ -45,7 +46,7 @@ bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, s
     return false;
   }
 
-  const auto &config = kModbusDevices[deviceIndex];
+  const auto &config = EepromManager::instance().getModbusDevice(deviceIndex);
 
   values.clear();
   if (rawData) {
@@ -122,11 +123,12 @@ bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, s
 
 bool ModbusManager::readAllDevices(std::vector<ModbusDeviceData> &devicesData) {
   devicesData.clear();
-  devicesData.reserve(kModbusDeviceCount);
+  const size_t deviceCount = EepromManager::instance().getModbusDeviceCount();
+  devicesData.reserve(deviceCount);
   bool allSuccess = true;
 
-  for (size_t i = 0; i < kModbusDeviceCount; i++) {
-    const auto &config = kModbusDevices[i];
+  for (size_t i = 0; i < deviceCount; i++) {
+    const auto &config = EepromManager::instance().getModbusDevice(i);
     ModbusDeviceData data;
     data.modbusModelId = config.modbusModelId;
     data.modbusModelName = config.modbusModelName;
@@ -142,7 +144,7 @@ bool ModbusManager::readAllDevices(std::vector<ModbusDeviceData> &devicesData) {
     devicesData.push_back(data);
 
     // Pausa entre dispositivos para no saturar la red
-    if (i < kModbusDeviceCount - 1) {
+    if (i < deviceCount - 1) {
       vTaskDelay(pdMS_TO_TICKS(kModbusInterDeviceDelayMs));
     }
   }
@@ -160,7 +162,7 @@ float ModbusManager::regsToFloat(uint16_t reg1, uint16_t reg2) {
 }
 
 bool ModbusManager::writeRegister(size_t deviceIndex, uint16_t address, const char* value) {
-  if (deviceIndex >= kModbusDeviceCount) {
+  if (deviceIndex >= EepromManager::instance().getModbusDeviceCount()) {
     LOGE("writeRegister: invalid device index %u\n", deviceIndex);
     return false;
   }
@@ -181,7 +183,7 @@ bool ModbusManager::writeRegister(size_t deviceIndex, uint16_t address, const ch
     return false;
   }
 
-  const auto &config = kModbusDevices[deviceIndex];
+  const auto &config = EepromManager::instance().getModbusDevice(deviceIndex);
   s_mbClient.setTarget(config.ip, 502);
 
   uint32_t tok = ++token_;
@@ -210,7 +212,7 @@ bool ModbusManager::writeRegister(size_t deviceIndex, uint16_t address, const ch
 }
 
 bool ModbusManager::writeCoil(size_t deviceIndex, uint16_t address, const char* value) {
-  if (deviceIndex >= kModbusDeviceCount) {
+  if (deviceIndex >= EepromManager::instance().getModbusDeviceCount()) {
     LOGE("writeCoil: invalid device index %u\n", deviceIndex);
     return false;
   }
@@ -237,7 +239,7 @@ bool ModbusManager::writeCoil(size_t deviceIndex, uint16_t address, const char* 
     return false;
   }
 
-  const auto &config = kModbusDevices[deviceIndex];
+  const auto &config = EepromManager::instance().getModbusDevice(deviceIndex);
   s_mbClient.setTarget(config.ip, 502);
 
   uint32_t tok = ++token_;

@@ -263,6 +263,91 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
   else if (strstr(topic, "/statusCoils") != nullptr) {
     ActuatorManager::instance().publishAllStatus();
   }
+  // Procesar saveModbusDevices: reemplazar TODA la lista de dispositivos Modbus
+  // en EEPROM y en el array en ejecución.
+  // Payload compacto: dispositivos separados por ';', campos por ',':
+  //   ip,unitId,startReg,totalRegs,regType,swapWords,modelId,modelName
+  //   regType: 0 o 3 = HOLDING_REGISTER (FC03) ; 1 o 4 = INPUT_REGISTER (FC04)
+  //   swapWords: 0/1
+  // Ej: "192.168.1.200,1,0,100,1,0,1,Device_1;192.168.1.101,1,0,8,0,1,3,Device_2"
+  else if (strstr(topic, "/saveModbusDevices") != nullptr) {
+    // El payload puede exceder el buffer msg[256]; usar uno mayor desde payload.
+    char buf[640];
+    unsigned int blen = (length < sizeof(buf) - 1) ? length : sizeof(buf) - 1;
+    memcpy(buf, payload, blen);
+    buf[blen] = '\0';
+
+    ModbusDeviceConfig devs[kMaxModbusDevices];
+    char names[kMaxModbusDevices][kModbusModelNameLen];
+    size_t count = 0;
+    bool parseOk = true;
+
+    char* devSave = nullptr;
+    char* devTok = strtok_r(buf, ";", &devSave);
+    while (devTok != nullptr && count < kMaxModbusDevices) {
+      char* fSave = nullptr;
+      char* ipStr    = strtok_r(devTok, ",", &fSave);
+      char* unitStr  = strtok_r(nullptr, ",", &fSave);
+      char* startStr = strtok_r(nullptr, ",", &fSave);
+      char* totStr   = strtok_r(nullptr, ",", &fSave);
+      char* rtStr    = strtok_r(nullptr, ",", &fSave);
+      char* swStr    = strtok_r(nullptr, ",", &fSave);
+      char* midStr   = strtok_r(nullptr, ",", &fSave);
+      char* nameStr  = strtok_r(nullptr, ",", &fSave);
+
+      if (!ipStr || !unitStr || !startStr || !totStr || !rtStr || !swStr || !midStr || !nameStr) {
+        parseOk = false;
+        break;
+      }
+
+      IPAddress ip;
+      if (!ip.fromString(ipStr)) {
+        parseOk = false;
+        break;
+      }
+
+      // regType acepta dos convenciones:
+      //   0 o 3 -> HOLDING_REGISTER (FC03)
+      //   1 o 4 -> INPUT_REGISTER  (FC04)
+      // Cualquier otro valor se considera invalido y rechaza el mensaje completo.
+      int rt = atoi(rtStr);
+      ModbusRegisterType regType;
+      if (rt == 0 || rt == 3) {
+        regType = ModbusRegisterType::HOLDING_REGISTER;
+      } else if (rt == 1 || rt == 4) {
+        regType = ModbusRegisterType::INPUT_REGISTER;
+      } else {
+        LOGE("MQTT saveModbusDevices: regType invalido '%s' (use 0/3=holding, 1/4=input)", rtStr);
+        parseOk = false;
+        break;
+      }
+
+      devs[count].ip = ip;
+      devs[count].unitId = (uint8_t)atoi(unitStr);
+      devs[count].startReg = (uint16_t)atoi(startStr);
+      devs[count].totalRegs = (uint16_t)atoi(totStr);
+      devs[count].regType = regType;
+      devs[count].swapWords = (atoi(swStr) != 0);
+      devs[count].modbusModelId = (uint8_t)atoi(midStr);
+      strncpy(names[count], nameStr, kModbusModelNameLen - 1);
+      names[count][kModbusModelNameLen - 1] = '\0';
+      devs[count].modbusModelName = names[count];
+
+      count++;
+      devTok = strtok_r(nullptr, ";", &devSave);
+    }
+
+    if (parseOk && count > 0) {
+      // setModbusDevices borra los anteriores, persiste en EEPROM y refresca el array en RAM.
+      if (eeprom.setModbusDevices(devs, count)) {
+        LOGI("MQTT: Modbus devices refreshed (%u)\n", (unsigned)count);
+      } else {
+        LOGE("MQTT: Failed to persist Modbus devices\n");
+      }
+    } else {
+      LOGE("MQTT: Invalid saveModbusDevices payload\n");
+    }
+  }
   // Procesar installFirmware: marcar para actualizar firmware (se procesa fuera del callback)
   else if (strstr(topic, "/installFirmware") != nullptr) {
     // El payload contiene la versión a instalar

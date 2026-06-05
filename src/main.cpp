@@ -161,7 +161,7 @@ void realTimeModbusTask(void *) {
       
       // Leer cada dispositivo Modbus y publicar
       std::vector<ModbusDeviceData> devicesData;
-      devicesData.reserve(kModbusDeviceCount);
+      devicesData.reserve(EepromManager::instance().getModbusDeviceCount());
       
       // Leer dispositivos Modbus (thread-safe internamente)
       bool readSuccess = modbus.readAllDevices(devicesData);
@@ -254,7 +254,7 @@ void instantValuesTask(void *) {
   auto &rtc = RtcManager::instance();
   
   std::vector<SensorDataRecord> recordsBuffer;
-  recordsBuffer.reserve(kModbusDeviceCount);
+  recordsBuffer.reserve(EepromManager::instance().getModbusDeviceCount());
   
   vTaskDelay(pdMS_TO_TICKS(10000));  // Esperar inicialización
   
@@ -282,7 +282,7 @@ void instantValuesTask(void *) {
       
       // Leer cada dispositivo Modbus y publicar
       std::vector<ModbusDeviceData> devicesData;
-      devicesData.reserve(kModbusDeviceCount);
+      devicesData.reserve(EepromManager::instance().getModbusDeviceCount());
       
       // Leer dispositivos Modbus (thread-safe internamente)
       bool readSuccess = modbus.readAllDevices(devicesData);
