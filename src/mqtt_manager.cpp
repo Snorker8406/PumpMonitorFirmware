@@ -64,7 +64,7 @@ void buildModbusDevicesString(char* buffer, size_t bufferSize) {
   size_t offset = 0;
   for (size_t i = 0; i < count && offset < bufferSize - 1; ++i) {
     const ModbusDeviceConfig& d = eeprom.getModbusDevice(i);
-    uint8_t rt = (d.regType == ModbusRegisterType::INPUT_REGISTER) ? 1 : 0;
+    uint8_t rt = static_cast<uint8_t>(d.regType);  // 3=HOLDING_REGISTER, 4=INPUT_REGISTER
     int written = snprintf(buffer + offset, bufferSize - offset,
                            "%s%u.%u.%u.%u,%u,%u,%u,%u,%u,%u,%s",
                            (i > 0) ? ";" : "",
