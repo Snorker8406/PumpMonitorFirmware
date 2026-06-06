@@ -99,9 +99,17 @@ void ActuatorManager::setConfirmation(size_t coilIndex, uint8_t confirmIndex, bo
     int nextPos = cyclePos(next);
     // Transición válida solo si el nuevo estado es adyacente en el ciclo
     // (siguiente = avanzar, anterior = retroceder/arrepentirse).
-    bool adjacent = (curPos >= 0 && nextPos >= 0) &&
-                    (nextPos == (curPos + 1) % kCycleLen ||
-                     nextPos == (curPos + kCycleLen - 1) % kCycleLen);
+    // Excepción: desde 000 (todos OFF) y desde 111 (todos ON) solo se permite
+    // avanzar; retroceder está bloqueado para forzar iniciar la secuencia
+    // desde el primer switch.
+    bool isAllOff = !cur[0] && !cur[1] && !cur[2];
+    bool isAllOn  =  cur[0] &&  cur[1] &&  cur[2];
+    bool forwardOnly = isAllOff || isAllOn;
+    bool isForward = (curPos >= 0 && nextPos >= 0) &&
+                     (nextPos == (curPos + 1) % kCycleLen);
+    bool isBackward = (curPos >= 0 && nextPos >= 0) &&
+                      (nextPos == (curPos + kCycleLen - 1) % kCycleLen);
+    bool adjacent = forwardOnly ? isForward : (isForward || isBackward);
     if (adjacent) {
       confirm_[coilIndex][confirmIndex] = value;
       applied = true;
