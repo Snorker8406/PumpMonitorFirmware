@@ -78,19 +78,21 @@ void buildModbusDevicesString(char* buffer, size_t bufferSize) {
 }
 
 // Construye el payload compacto de los actuadores (coils) en el buffer dado.
-// Formato: coilIndex,modbusAddress,confirmationsEnabled;...
-// Ej: "0,0,1;1,1,1;2,2,0;3,3,1"
+// Formato: deviceIndex;coilIndex,modbusAddress,confirmationsEnabled;...
+// Ej: "1;0,0,1;1,1,1;2,2,0;3,3,1"
 void buildActuatorsString(char* buffer, size_t bufferSize) {
-  buffer[0] = '\0';
-  size_t offset = 0;
+  auto &eeprom = EepromManager::instance();
+  int n = snprintf(buffer, bufferSize, "%u", (unsigned)eeprom.getActuatorModbusDeviceIndex());
+  size_t offset = (n > 0) ? (size_t)n : 0;
   for (size_t i = 0; i < kActuatorCoilCount && offset < bufferSize - 1; ++i) {
-    bool enabled = ActuatorManager::instance().confirmationsEnabled(i);
     int written = snprintf(buffer + offset, bufferSize - offset,
-                           "%s%u,%u,%u",
-                           (i > 0) ? ";" : "",
+                           ";%u,%u,%u,%u,%u,%u",
                            (unsigned)i,
-                           (unsigned)kActuatorCoilAddresses[i],
-                           (unsigned)(enabled ? 1 : 0));
+                           (unsigned)eeprom.getActuatorCoilOnAddress(i),
+                           (unsigned)(eeprom.getActuatorCoilOnValue(i) ? 1 : 0),
+                           (unsigned)eeprom.getActuatorCoilOffAddress(i),
+                           (unsigned)(eeprom.getActuatorCoilOffValue(i) ? 1 : 0),
+                           (unsigned)(eeprom.getActuatorCoilEnabled(i) ? 1 : 0));
     if (written > 0) offset += (size_t)written;
   }
 }
@@ -448,6 +450,152 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
   // Response topic: device/{MAC}_var/actuators
   // Payload: coilIndex,modbusAddress,confirmationsEnabled;...
   else if (strstr(topic, "/getActuators") != nullptr) {
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') macNoColon[idx++] = *p;
+    }
+
+    char actBuf[256];
+    buildActuatorsString(actBuf, sizeof(actBuf));
+
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/actuators", macNoColon);
+
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, actBuf)) {
+      LOGI("MQTT: Published actuators (%u coils)\n", (unsigned)kActuatorCoilCount);
+    } else {
+      LOGE("MQTT: Failed to publish actuators\n");
+    }
+  }
+  // Procesar saveActuators: reemplazar la configuracion de los actuadores en EEPROM
+  // y recargarla en ejecucion.
+  // Payload compacto: deviceIndex;coilIndex,onAddress,onValue,offAddress,offValue,confirmationsEnabled;...
+  //   deviceIndex: indice del dispositivo Modbus (0..count-1) usado para escribir los coils
+  //   coilIndex:   indice del coil (0..kActuatorCoilCount-1)
+  //   onAddress/onValue:   direccion y valor (0/1) a escribir en secuencia de arranque (111)
+  //   offAddress/offValue: direccion y valor (0/1) a escribir en secuencia de paro (000)
+  //   confirmationsEnabled: 0/1
+  // Ej: "1;0,0,1,0,0,1;1,1,1,1,0,1;2,2,1,2,0,1;3,3,1,3,0,1"
+  // Los coils no incluidos en el payload conservan su valor actual.
+  else if (strstr(topic, "/saveActuators") != nullptr) {
+    char buf[256];
+    unsigned int blen = (length < sizeof(buf) - 1) ? length : sizeof(buf) - 1;
+    memcpy(buf, payload, blen);
+    buf[blen] = '\0';
+
+    // Partir de la configuracion actual para permitir actualizaciones parciales.
+    uint16_t onAddresses[kActuatorCoilCount];
+    bool     onValues[kActuatorCoilCount];
+    uint16_t offAddresses[kActuatorCoilCount];
+    bool     offValues[kActuatorCoilCount];
+    bool     enabled[kActuatorCoilCount];
+    for (size_t i = 0; i < kActuatorCoilCount; ++i) {
+      onAddresses[i]  = eeprom.getActuatorCoilOnAddress(i);
+      onValues[i]     = eeprom.getActuatorCoilOnValue(i);
+      offAddresses[i] = eeprom.getActuatorCoilOffAddress(i);
+      offValues[i]    = eeprom.getActuatorCoilOffValue(i);
+      enabled[i]      = eeprom.getActuatorCoilEnabled(i);
+    }
+
+    bool parseOk = true;
+
+    char* tokSave = nullptr;
+    char* devIdxStr = strtok_r(buf, ";", &tokSave);
+    if (!devIdxStr) {
+      parseOk = false;
+    }
+
+    size_t deviceIndex = eeprom.getActuatorModbusDeviceIndex();
+    if (parseOk) {
+      int di = atoi(devIdxStr);
+      if (di < 0 || (size_t)di >= eeprom.getModbusDeviceCount()) {
+        LOGE("MQTT saveActuators: deviceIndex invalido '%s' (count=%u)\n",
+             devIdxStr, (unsigned)eeprom.getModbusDeviceCount());
+        parseOk = false;
+      } else {
+        deviceIndex = (size_t)di;
+      }
+    }
+
+    if (parseOk) {
+      char* coilTok = strtok_r(nullptr, ";", &tokSave);
+      while (coilTok != nullptr) {
+        char* fSave      = nullptr;
+        char* idxStr     = strtok_r(coilTok, ",", &fSave);
+        char* onAddrStr  = strtok_r(nullptr, ",", &fSave);
+        char* onValStr   = strtok_r(nullptr, ",", &fSave);
+        char* offAddrStr = strtok_r(nullptr, ",", &fSave);
+        char* offValStr  = strtok_r(nullptr, ",", &fSave);
+        char* enStr      = strtok_r(nullptr, ",", &fSave);
+
+        if (!idxStr || !onAddrStr || !onValStr || !offAddrStr || !offValStr || !enStr) {
+          parseOk = false;
+          break;
+        }
+
+        int ci = atoi(idxStr);
+        if (ci < 0 || (size_t)ci >= kActuatorCoilCount) {
+          LOGE("MQTT saveActuators: coilIndex invalido '%s'\n", idxStr);
+          parseOk = false;
+          break;
+        }
+
+        onAddresses[ci]  = (uint16_t)atoi(onAddrStr);
+        onValues[ci]     = (atoi(onValStr) != 0);
+        offAddresses[ci] = (uint16_t)atoi(offAddrStr);
+        offValues[ci]    = (atoi(offValStr) != 0);
+        enabled[ci]      = (atoi(enStr) != 0);
+
+        coilTok = strtok_r(nullptr, ";", &tokSave);
+      }
+    }
+
+    if (parseOk) {
+      if (eeprom.setActuatorConfig(deviceIndex, onAddresses, onValues, offAddresses, offValues, enabled)) {
+        ActuatorManager::instance().reloadConfig();
+        LOGI("MQTT: Actuators config saved (deviceIndex=%u)\n", (unsigned)deviceIndex);
+      } else {
+        LOGE("MQTT: Failed to persist actuators config\n");
+      }
+    } else {
+      LOGE("MQTT: Invalid saveActuators payload\n");
+    }
+
+    // Publicar la configuracion (re)cargada para confirmar el resultado.
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') macNoColon[idx++] = *p;
+    }
+
+    char actBuf[256];
+    buildActuatorsString(actBuf, sizeof(actBuf));
+
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/actuators", macNoColon);
+
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, actBuf)) {
+      LOGI("MQTT: Published actuators (%u coils)\n", (unsigned)kActuatorCoilCount);
+    } else {
+      LOGE("MQTT: Failed to publish actuators\n");
+    }
+  }
+  // Procesar cleanActuators: restablecer la configuracion de actuadores a los valores
+  // por defecto (app_config) en EEPROM y recargarla. Tras el borrado publica la
+  // configuracion en device/{MAC}_var/actuators para confirmar.
+  else if (strstr(topic, "/cleanActuators") != nullptr) {
+    if (eeprom.clearActuatorConfig()) {
+      ActuatorManager::instance().reloadConfig();
+      LOGI("MQTT: Actuators config reset to defaults\n");
+    } else {
+      LOGE("MQTT: Failed to reset actuators config\n");
+    }
+
     const char *macColoned = NetworkManager::instance().macString();
     char macNoColon[13] = {0};
     int idx = 0;

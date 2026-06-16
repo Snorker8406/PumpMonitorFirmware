@@ -18,6 +18,10 @@ class ActuatorManager {
 
   void begin();
 
+  // Recarga la configuración (deviceIndex, direcciones y enabled) desde EEPROM.
+  // Se llama al inicio y tras actualizar la config vía MQTT.
+  void reloadConfig();
+
   // Activar/desactivar el mecanismo de confirmaciones de un coil concreto.
   void setConfirmationsEnabled(size_t coilIndex, bool enabled);
   bool confirmationsEnabled(size_t coilIndex) const;
@@ -50,6 +54,13 @@ class ActuatorManager {
 
   SemaphoreHandle_t mutex_{nullptr};
   volatile bool confirmationsEnabled_[kActuatorCoilCount]{};
+
+  // Configuración cargada desde EEPROM.
+  uint16_t coilOnAddresses_[kActuatorCoilCount]{};
+  bool     coilOnValues_[kActuatorCoilCount]{};
+  uint16_t coilOffAddresses_[kActuatorCoilCount]{};
+  bool     coilOffValues_[kActuatorCoilCount]{};
+  size_t modbusDeviceIndex_ = kActuatorModbusDeviceIndex;
 
   bool confirm_[kActuatorCoilCount][kActuatorConfirmCount]{};
   volatile bool pendingWrite_[kActuatorCoilCount]{};

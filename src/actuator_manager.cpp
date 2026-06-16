@@ -1,5 +1,6 @@
 #include "actuator_manager.hpp"
 
+#include "eeprom_manager.hpp"
 #include "log.hpp"
 #include "modbus_manager.hpp"
 #include "mqtt_manager.hpp"
@@ -47,11 +48,22 @@ void ActuatorManager::begin() {
   if (!mutex_) {
     LOGE("Failed to create Actuator mutex\n");
   }
-  for (size_t i = 0; i < kActuatorCoilCount; i++) {
-    confirmationsEnabled_[i] = kActuatorConfirmationsEnabled[i];
-  }
+  reloadConfig();
   LOGI("ActuatorManager initialized (%u coils, %u confirmations/coil)\n",
        (unsigned)kActuatorCoilCount, (unsigned)kActuatorConfirmCount);
+}
+
+void ActuatorManager::reloadConfig() {
+  auto &eeprom = EepromManager::instance();
+  modbusDeviceIndex_ = eeprom.getActuatorModbusDeviceIndex();
+  for (size_t i = 0; i < kActuatorCoilCount; i++) {
+    coilOnAddresses_[i]  = eeprom.getActuatorCoilOnAddress(i);
+    coilOnValues_[i]     = eeprom.getActuatorCoilOnValue(i);
+    coilOffAddresses_[i] = eeprom.getActuatorCoilOffAddress(i);
+    coilOffValues_[i]    = eeprom.getActuatorCoilOffValue(i);
+    confirmationsEnabled_[i] = eeprom.getActuatorCoilEnabled(i);
+  }
+  LOGI("ActuatorManager config loaded (deviceIndex=%u)\n", (unsigned)modbusDeviceIndex_);
 }
 
 bool ActuatorManager::confirmationsEnabled(size_t coilIndex) const {
@@ -229,14 +241,17 @@ void ActuatorManager::triggerWrite(size_t coilIndex, bool value) {
 void ActuatorManager::process() {
   for (size_t i = 0; i < kActuatorCoilCount; i++) {
     bool doWrite = false;
-    bool value = false;
+    // pendingValue_ indica qué secuencia se completó:
+    //   true  = secuencia de ARRANQUE (111)
+    //   false = secuencia de PARO     (000)
+    bool isOnSequence = false;
 
     if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
       continue;
     }
     if (pendingWrite_[i]) {
       doWrite = true;
-      value = pendingValue_[i];
+      isOnSequence = pendingValue_[i];
       pendingWrite_[i] = false;
     }
     xSemaphoreGive(mutex_);
@@ -245,16 +260,22 @@ void ActuatorManager::process() {
       continue;
     }
 
-    uint16_t address = kActuatorCoilAddresses[i];
+    // El valor a escribir y su dirección dependen SOLO de la configuración del coil,
+    // no del flag de secuencia. Arranque (111) usa onAddress/onValue; paro (000)
+    // usa offAddress/offValue. No se asume 1/0.
+    uint16_t address  = isOnSequence ? coilOnAddresses_[i] : coilOffAddresses_[i];
+    bool     writeVal = isOnSequence ? coilOnValues_[i]    : coilOffValues_[i];
     // writeCoil es bloqueante (toma el mutex de Modbus); se llama fuera del mutex propio.
     bool ok = ModbusManager::instance().writeCoil(
-        kActuatorModbusDeviceIndex, address, value ? "1" : "0");
+        modbusDeviceIndex_, address, writeVal ? "1" : "0");
 
     if (ok) {
-      LOGI("Actuator coil %u (addr %u) -> %s OK\n", (unsigned)i, address, value ? "ON" : "OFF");
+      LOGI("Actuator coil %u (%s addr %u val %u) OK\n", (unsigned)i,
+           isOnSequence ? "ON" : "OFF", address, writeVal ? 1 : 0);
       // Los switches conservan su estado (representan la posición en la secuencia).
     } else {
-      LOGE("Actuator coil %u (addr %u) write FAILED\n", (unsigned)i, address);
+      LOGE("Actuator coil %u (%s addr %u) write FAILED\n", (unsigned)i,
+           isOnSequence ? "ON" : "OFF", address);
     }
   }
 }

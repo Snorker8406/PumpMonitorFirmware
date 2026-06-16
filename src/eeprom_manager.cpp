@@ -78,6 +78,9 @@ void EepromManager::begin() {
 
   // Cargar lista de dispositivos Modbus (o sembrar con defaults si está vacía)
   loadModbusDevices();
+
+  // Cargar configuración de actuadores (o sembrar con defaults si está vacía)
+  loadActuators();
 }
 
 String EepromManager::getWebServiceURL() {
@@ -268,6 +271,10 @@ void EepromManager::resetToDefaults() {
   // Restablecer dispositivos Modbus desde defaults y persistir
   seedModbusDevicesFromDefaults();
   saveModbusDevices();
+
+  // Restablecer actuadores desde defaults y persistir
+  seedActuatorsFromDefaults();
+  saveActuators();
 }
 
 // ── Dispositivos Modbus ──
@@ -405,3 +412,145 @@ bool EepromManager::clearModbusDevices() {
   LOGI("EEPROM: Modbus devices cleared\n");
   return true;
 }
+
+// ── Actuadores ──
+
+size_t EepromManager::getActuatorModbusDeviceIndex() const {
+  return actuatorDeviceIndex_;
+}
+
+uint16_t EepromManager::getActuatorCoilOnAddress(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return 0;
+  }
+  return actuatorCoilOnAddresses_[coilIndex];
+}
+
+bool EepromManager::getActuatorCoilOnValue(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return true;
+  }
+  return actuatorCoilOnValues_[coilIndex];
+}
+
+uint16_t EepromManager::getActuatorCoilOffAddress(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return 0;
+  }
+  return actuatorCoilOffAddresses_[coilIndex];
+}
+
+bool EepromManager::getActuatorCoilOffValue(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return false;
+  }
+  return actuatorCoilOffValues_[coilIndex];
+}
+
+bool EepromManager::getActuatorCoilEnabled(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return false;
+  }
+  return actuatorCoilEnabled_[coilIndex];
+}
+
+void EepromManager::seedActuatorsFromDefaults() {
+  actuatorDeviceIndex_ = kActuatorModbusDeviceIndex;
+  for (size_t i = 0; i < kActuatorCoilCount; ++i) {
+    actuatorCoilOnAddresses_[i]  = kActuatorCoilOnAddresses[i];
+    actuatorCoilOnValues_[i]     = kActuatorCoilOnValues[i];
+    actuatorCoilOffAddresses_[i] = kActuatorCoilOffAddresses[i];
+    actuatorCoilOffValues_[i]    = kActuatorCoilOffValues[i];
+    actuatorCoilEnabled_[i]      = kActuatorConfirmationsEnabled[i];
+  }
+}
+
+void EepromManager::loadActuators() {
+  size_t blobLen = prefs_.getBytesLength(kKeyActCoils);
+
+  if (blobLen == 0) {
+    // Primera vez o EEPROM vacía: sembrar con defaults y persistir
+    seedActuatorsFromDefaults();
+    saveActuators();
+    LOGI("EEPROM: Actuators seeded from defaults\n");
+    return;
+  }
+
+  ActuatorCoilStored buf[kActuatorCoilCount];
+  size_t toRead = sizeof(ActuatorCoilStored) * kActuatorCoilCount;
+  size_t read = prefs_.getBytes(kKeyActCoils, buf, toRead);
+  if (read != toRead) {
+    LOGE("EEPROM: Actuator blob size mismatch (%u != %u), using defaults\n",
+         (unsigned)read, (unsigned)toRead);
+    seedActuatorsFromDefaults();
+    saveActuators();
+    return;
+  }
+
+  actuatorDeviceIndex_ = prefs_.getUChar(kKeyActDevIdx, (uint8_t)kActuatorModbusDeviceIndex);
+  for (size_t i = 0; i < kActuatorCoilCount; ++i) {
+    actuatorCoilOnAddresses_[i]  = buf[i].onAddress;
+    actuatorCoilOnValues_[i]     = (buf[i].onValue != 0);
+    actuatorCoilOffAddresses_[i] = buf[i].offAddress;
+    actuatorCoilOffValues_[i]    = (buf[i].offValue != 0);
+    actuatorCoilEnabled_[i]      = (buf[i].enabled != 0);
+  }
+  LOGI("EEPROM: Actuators loaded (deviceIndex=%u)\n", (unsigned)actuatorDeviceIndex_);
+}
+
+bool EepromManager::saveActuators() {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot save actuators\n");
+    return false;
+  }
+
+  ActuatorCoilStored buf[kActuatorCoilCount];
+  for (size_t i = 0; i < kActuatorCoilCount; ++i) {
+    buf[i].onAddress  = actuatorCoilOnAddresses_[i];
+    buf[i].onValue    = actuatorCoilOnValues_[i]  ? 1 : 0;
+    buf[i].offAddress = actuatorCoilOffAddresses_[i];
+    buf[i].offValue   = actuatorCoilOffValues_[i] ? 1 : 0;
+    buf[i].enabled    = actuatorCoilEnabled_[i]   ? 1 : 0;
+  }
+
+  prefs_.putUChar(kKeyActDevIdx, (uint8_t)actuatorDeviceIndex_);
+  size_t written = prefs_.putBytes(kKeyActCoils, buf, sizeof(buf));
+  if (written != sizeof(buf)) {
+    LOGE("EEPROM: Failed to write actuators\n");
+    return false;
+  }
+  LOGI("EEPROM: Actuators saved (deviceIndex=%u)\n", (unsigned)actuatorDeviceIndex_);
+  return true;
+}
+
+bool EepromManager::setActuatorConfig(size_t deviceIndex,
+                                       const uint16_t* onAddresses, const bool* onValues,
+                                       const uint16_t* offAddresses, const bool* offValues,
+                                       const bool* enabled) {
+  if (!onAddresses || !onValues || !offAddresses || !offValues || !enabled) {
+    LOGE("EEPROM: Invalid actuator config\n");
+    return false;
+  }
+  actuatorDeviceIndex_ = deviceIndex;
+  for (size_t i = 0; i < kActuatorCoilCount; ++i) {
+    actuatorCoilOnAddresses_[i]  = onAddresses[i];
+    actuatorCoilOnValues_[i]     = onValues[i];
+    actuatorCoilOffAddresses_[i] = offAddresses[i];
+    actuatorCoilOffValues_[i]    = offValues[i];
+    actuatorCoilEnabled_[i]      = enabled[i];
+  }
+  return saveActuators();
+}
+
+bool EepromManager::clearActuatorConfig() {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot clear actuators\n");
+    return false;
+  }
+  // Restablecer a defaults de app_config y persistir.
+  seedActuatorsFromDefaults();
+  bool ok = saveActuators();
+  LOGI("EEPROM: Actuators reset to defaults\n");
+  return ok;
+}
+

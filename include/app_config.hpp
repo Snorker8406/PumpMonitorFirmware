@@ -111,9 +111,13 @@ constexpr size_t kActuatorCoilCount = 4;               // Número de coils contr
 constexpr uint8_t kActuatorConfirmCount = 3;           // Confirmaciones (booleanos) por coil
 // Activar/desactivar el mecanismo de confirmaciones por cada coil (un valor por coil)
 static constexpr bool kActuatorConfirmationsEnabled[kActuatorCoilCount] = {true, true, true, true};
-constexpr size_t kActuatorModbusDeviceIndex = 0;       // Índice del dispositivo Modbus destino para los coils
-// Dirección Modbus de cada coil (debe tener kActuatorCoilCount elementos)
-static constexpr uint16_t kActuatorCoilAddresses[kActuatorCoilCount] = {0, 1, 2, 3};
+constexpr size_t kActuatorModbusDeviceIndex = 1;       // Índice del dispositivo Modbus destino para los coils
+// Secuencia de ARRANQUE (llegando a 111): dirección y valor a escribir por coil
+static constexpr uint16_t kActuatorCoilOnAddresses[kActuatorCoilCount] = {0, 1, 2, 3};
+static constexpr bool     kActuatorCoilOnValues[kActuatorCoilCount]    = {true, true, true, true};
+// Secuencia de PARO (llegando a 000): dirección y valor a escribir por coil
+static constexpr uint16_t kActuatorCoilOffAddresses[kActuatorCoilCount] = {0, 1, 2, 3};
+static constexpr bool     kActuatorCoilOffValues[kActuatorCoilCount]    = {false, false, false, false};
 constexpr uint32_t kActuatorTaskStackWords = 4096;
 constexpr UBaseType_t kActuatorTaskPriority = 1;
 constexpr BaseType_t kActuatorTaskCore = APP_CPU_NUM;  // Core 1

@@ -42,6 +42,25 @@ class EepromManager {
   bool setModbusDevices(const ModbusDeviceConfig* devices, size_t count);
   // Vacía la lista de dispositivos Modbus (count = 0) y la persiste en EEPROM.
   bool clearModbusDevices();
+
+  // ── Actuadores (configurables, persistidos en EEPROM) ──
+  // Se cargan al arrancar; si la EEPROM está vacía se siembran desde
+  // kActuatorModbusDeviceIndex / kActuatorCoilOn*/kActuatorCoilOff* / kActuatorConfirmationsEnabled.
+  size_t getActuatorModbusDeviceIndex() const;
+  uint16_t getActuatorCoilOnAddress(size_t coilIndex) const;
+  bool     getActuatorCoilOnValue(size_t coilIndex) const;
+  uint16_t getActuatorCoilOffAddress(size_t coilIndex) const;
+  bool     getActuatorCoilOffValue(size_t coilIndex) const;
+  bool getActuatorCoilEnabled(size_t coilIndex) const;
+  // Reemplaza toda la configuración de actuadores y la persiste en EEPROM.
+  // onAddresses/onValues: dirección y valor a escribir en secuencia de arranque (111).
+  // offAddresses/offValues: dirección y valor a escribir en secuencia de paro (000).
+  bool setActuatorConfig(size_t deviceIndex,
+                         const uint16_t* onAddresses, const bool* onValues,
+                         const uint16_t* offAddresses, const bool* offValues,
+                         const bool* enabled);
+  // Restablece la configuración de actuadores a los valores por defecto y persiste.
+  bool clearActuatorConfig();
   
   // Resetear a valores por defecto
   void resetToDefaults();
@@ -67,6 +86,22 @@ class EepromManager {
   void seedModbusDevicesFromDefaults();
   // Persiste la lista actual en RAM hacia EEPROM.
   bool saveModbusDevices();
+
+  // Estructura serializable (POD) para la configuración de cada coil del actuador.
+  struct ActuatorCoilStored {
+    uint16_t onAddress;
+    uint8_t  onValue;   // bool
+    uint16_t offAddress;
+    uint8_t  offValue;  // bool
+    uint8_t  enabled;   // bool
+  };
+
+  // Carga la configuración de actuadores desde EEPROM (o siembra con defaults).
+  void loadActuators();
+  // Copia los valores por defecto de app_config a la RAM.
+  void seedActuatorsFromDefaults();
+  // Persiste la configuración de actuadores actual en RAM hacia EEPROM.
+  bool saveActuators();
   
   Preferences prefs_;
   bool initialized_ = false;
@@ -76,6 +111,14 @@ class EepromManager {
   ModbusDeviceConfig modbusDevices_[kMaxModbusDevices]{};
   char modbusModelNames_[kMaxModbusDevices][kModbusModelNameLen]{};
   size_t modbusDeviceCount_ = 0;
+
+  // Configuración activa de actuadores en RAM.
+  size_t   actuatorDeviceIndex_ = kActuatorModbusDeviceIndex;
+  uint16_t actuatorCoilOnAddresses_[kActuatorCoilCount]{};
+  bool     actuatorCoilOnValues_[kActuatorCoilCount]{};
+  uint16_t actuatorCoilOffAddresses_[kActuatorCoilCount]{};
+  bool     actuatorCoilOffValues_[kActuatorCoilCount]{};
+  bool     actuatorCoilEnabled_[kActuatorCoilCount]{};
   
   static constexpr const char* kNamespace = "pumpmon";
   static constexpr const char* kKeyUrl = "webUrl";
@@ -85,6 +128,8 @@ class EepromManager {
   static constexpr const char* kKeyBackupResult = "backupRes";
   static constexpr const char* kKeyModbusCount = "mbDevCount";
   static constexpr const char* kKeyModbusDevs = "mbDevs";
+  static constexpr const char* kKeyActDevIdx = "actDevIdx";
+  static constexpr const char* kKeyActCoils = "actCoils";
   static constexpr const char* kDefaultUrl = "https://pumpmonitor.agrotecsa.com.mx/";
   static constexpr uint16_t kDefaultRTInterval = 3;
   static constexpr uint16_t kDefaultIVInterval = 60;  // 1 minuto por defecto
