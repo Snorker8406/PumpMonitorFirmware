@@ -36,13 +36,14 @@ class ModbusServerManager {
 
   // Estructura de un evento de escritura recibido.
   struct WriteEvent {
+    uint8_t serverId;      // Server ID objetivo en la request Modbus
     uint8_t functionCode;  // FC06 o FC16
     uint16_t address;      // Dirección del registro escrito
     uint16_t value;        // Valor escrito
   };
 
   // Encola un evento de escritura (llamado desde los workers de eModbus).
-  void enqueueEvent(uint8_t fc, uint16_t address, uint16_t value);
+  void enqueueEvent(uint8_t serverId, uint8_t fc, uint16_t address, uint16_t value);
 
   static constexpr size_t kEventBufferSize = 32;
 

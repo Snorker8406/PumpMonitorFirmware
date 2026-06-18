@@ -164,9 +164,22 @@ void ActuatorManager::setConfirmation(size_t coilIndex, uint8_t confirmIndex, bo
   }
 
   // Publicar estado del coil: "index,estados" (ej: "1,110").
-  char payload[24];
-  snprintf(payload, sizeof(payload), "%u,%s", (unsigned)coilIndex, states);
-  publishStatus("coilStatus", payload);
+  // Se omiten los estados completos 111 (arranque) y 000 (paro): esos ya no se
+  // confirman al servidor.
+  bool allOn = true;
+  bool allOff = true;
+  for (uint8_t i = 0; i < kActuatorConfirmCount; i++) {
+    if (states[i] == '1') {
+      allOff = false;
+    } else {
+      allOn = false;
+    }
+  }
+  if (!allOn && !allOff) {
+    char payload[24];
+    snprintf(payload, sizeof(payload), "%u,%s", (unsigned)coilIndex, states);
+    publishStatus("coilStatus", payload);
+  }
 }
 
 void ActuatorManager::requestCoil(size_t coilIndex, bool value) {

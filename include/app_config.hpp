@@ -124,7 +124,7 @@ constexpr BaseType_t kActuatorTaskCore = APP_CPU_NUM;  // Core 1
 constexpr uint32_t kActuatorTaskPeriodMs = 100;        // Periodo de evaluación de escrituras pendientes
 
 // ── Modbus Server (esclavo TCP: dispositivos externos escriben en este device) ──
-constexpr uint8_t kModbusServerUnitId = 1;             // Unit/Server ID que atiende este device
+constexpr uint8_t kModbusServerUnitId = 2;             // Unit/Server ID que atiende este device
 constexpr uint16_t kModbusServerPort = 502;            // Puerto TCP de escucha (estándar Modbus = 502)
 constexpr uint8_t kModbusServerMaxClients = 4;         // Conexiones simultáneas permitidas
 constexpr uint32_t kModbusServerTimeoutMs = 10000;     // Timeout de inactividad por cliente (ms)

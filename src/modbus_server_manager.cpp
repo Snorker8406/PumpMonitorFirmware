@@ -1,6 +1,8 @@
 #include "modbus_server_manager.hpp"
 
 #include "log.hpp"
+#include "mqtt_manager.hpp"
+#include "network_manager.hpp"
 
 // El Logging.h interno de eModbus define macros LOG_LEVEL_ERROR/INFO/DEBUG que
 // chocan con el enum LogLevel de log.hpp. Incluimos log.hpp primero (para que el
@@ -22,7 +24,7 @@ ModbusServerManager &ModbusServerManager::instance() {
   return inst;
 }
 
-void ModbusServerManager::enqueueEvent(uint8_t fc, uint16_t address, uint16_t value) {
+void ModbusServerManager::enqueueEvent(uint8_t serverId, uint8_t fc, uint16_t address, uint16_t value) {
   if (!mutex_) return;
   if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(50)) != pdTRUE) return;
 
@@ -33,6 +35,7 @@ void ModbusServerManager::enqueueEvent(uint8_t fc, uint16_t address, uint16_t va
 
   size_t next = (head_ + 1) % kEventBufferSize;
   if (next != tail_) {  // Hay espacio (descarta si el buffer está lleno)
+    events_[head_].serverId = serverId;
     events_[head_].functionCode = fc;
     events_[head_].address = address;
     events_[head_].value = value;
@@ -73,7 +76,8 @@ void ModbusServerManager::begin() {
           return err;
         }
 
-        ModbusServerManager::instance().enqueueEvent(WRITE_HOLD_REGISTER, address, value);
+        ModbusServerManager::instance().enqueueEvent(
+          request.getServerID(), WRITE_HOLD_REGISTER, address, value);
 
         ModbusMessage response;
         response.add(request.getServerID(), request.getFunctionCode(), address, value);
@@ -99,7 +103,8 @@ void ModbusServerManager::begin() {
         for (uint16_t i = 0; i < words; ++i) {
           uint16_t value = 0;
           request.get(7 + i * 2, value);  // 7 = offset al primer byte de datos
-          ModbusServerManager::instance().enqueueEvent(WRITE_MULT_REGISTERS, address + i, value);
+            ModbusServerManager::instance().enqueueEvent(
+              request.getServerID(), WRITE_MULT_REGISTERS, address + i, value);
         }
 
         ModbusMessage response;
@@ -117,6 +122,28 @@ void ModbusServerManager::begin() {
 
 void ModbusServerManager::process() {
   if (!mutex_) return;
+
+  // Acumular eventos en payload compacto para publicar por MQTT.
+  // Formato: serverId;address,value;address,value;...
+  // Si se detectan eventos con serverId distinto, se publica el lote actual
+  // y se inicia uno nuevo para no mezclar emisores.
+  char payload[256];
+  int offset = 0;
+  bool hasAnyEvent = false;
+  bool hasOpenBatch = false;
+  uint8_t currentServerId = 0;
+
+  const char *macColoned = NetworkManager::instance().macString();
+  char macNoColon[13] = {0};
+  int macIdx = 0;
+  for (const char *p = macColoned; *p && macIdx < 12; ++p) {
+    if (*p != ':') {
+      macNoColon[macIdx++] = *p;
+    }
+  }
+
+  char topic[64];
+  snprintf(topic, sizeof(topic), "device/%s_var/modbusDeviceEvent", macNoColon);
 
   for (;;) {
     WriteEvent ev;
@@ -136,5 +163,28 @@ void ModbusServerManager::process() {
     const char *fcName = (ev.functionCode == WRITE_HOLD_REGISTER) ? "FC06" : "FC16";
     LOGI("Modbus Server RX | %s | reg[%u] = %u (0x%04X)\n",
          fcName, ev.address, ev.value, ev.value);
+
+    hasAnyEvent = true;
+
+    if (!hasOpenBatch) {
+      currentServerId = ev.serverId;
+      offset = snprintf(payload, sizeof(payload), "%u", (unsigned)currentServerId);
+      hasOpenBatch = (offset > 0 && (size_t)offset < sizeof(payload));
+    } else if (ev.serverId != currentServerId) {
+      MqttManager::instance().publish(topic, payload);
+      currentServerId = ev.serverId;
+      offset = snprintf(payload, sizeof(payload), "%u", (unsigned)currentServerId);
+      hasOpenBatch = (offset > 0 && (size_t)offset < sizeof(payload));
+    }
+
+    if (hasOpenBatch && offset > 0 && (size_t)offset < sizeof(payload)) {
+      int written = snprintf(payload + offset, sizeof(payload) - offset,
+                             ";%u,%u", ev.address, ev.value);
+      if (written > 0) offset += written;
+    }
+  }
+
+  if (hasAnyEvent && hasOpenBatch) {
+    MqttManager::instance().publish(topic, payload);
   }
 }
