@@ -80,6 +80,23 @@ void EepromManager::begin() {
   }
   LOGI("EEPROM: Alarm config | devIdx=%u start=%u count=%u\n",
        getAlarmDeviceIndex(), getAlarmStartAddress(), getAlarmCount());  
+
+  // Sembrar configuración del Modbus Server si no existe
+  if (!prefs_.isKey(kKeyMbSrvUnit)) {
+    setServerUnitId(kModbusServerUnitId);
+  }
+  if (!prefs_.isKey(kKeyMbSrvPort)) {
+    setServerPort(kModbusServerPort);
+  }
+  if (!prefs_.isKey(kKeyMbSrvMaxCli)) {
+    setServerMaxClients(kModbusServerMaxClients);
+  }
+  if (!prefs_.isKey(kKeyMbSrvTout)) {
+    setServerTimeoutMs(kModbusServerTimeoutMs);
+  }
+  LOGI("EEPROM: Modbus Server config | unitId=%u port=%u maxClients=%u timeout=%lu ms\n",
+       getServerUnitId(), getServerPort(), getServerMaxClients(), getServerTimeoutMs());
+
   // Verificar si existe Device ID en EEPROM
   int32_t currentDeviceID = prefs_.getInt(kKeyDeviceID, -1);
   
@@ -326,6 +343,104 @@ bool EepromManager::setAlarmCoilsTypes(const char* types) {
     return false;
   }
   LOGI("EEPROM: Alarm Coil Types updated: %s\n", types);
+  return true;
+}
+
+// ── Modbus Server (esclavo TCP) ──
+
+uint8_t EepromManager::getServerUnitId() {
+  if (!initialized_) {
+    return kModbusServerUnitId;
+  }
+  return (uint8_t)prefs_.getUChar(kKeyMbSrvUnit, kModbusServerUnitId);
+}
+
+bool EepromManager::setServerUnitId(uint8_t unitId) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Server Unit ID\n");
+    return false;
+  }
+  if (unitId < 1 || unitId > 247) {
+    LOGE("EEPROM: Invalid Server Unit ID (must be 1-247)\n");
+    return false;
+  }
+  if (prefs_.putUChar(kKeyMbSrvUnit, unitId) == 0) {
+    LOGE("EEPROM: Failed to write Server Unit ID\n");
+    return false;
+  }
+  LOGI("EEPROM: Server Unit ID updated: %u\n", unitId);
+  return true;
+}
+
+uint16_t EepromManager::getServerPort() {
+  if (!initialized_) {
+    return kModbusServerPort;
+  }
+  return prefs_.getUShort(kKeyMbSrvPort, kModbusServerPort);
+}
+
+bool EepromManager::setServerPort(uint16_t port) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Server Port\n");
+    return false;
+  }
+  if (port == 0) {
+    LOGE("EEPROM: Invalid Server Port (must be 1-65535)\n");
+    return false;
+  }
+  if (prefs_.putUShort(kKeyMbSrvPort, port) == 0) {
+    LOGE("EEPROM: Failed to write Server Port\n");
+    return false;
+  }
+  LOGI("EEPROM: Server Port updated: %u\n", port);
+  return true;
+}
+
+uint8_t EepromManager::getServerMaxClients() {
+  if (!initialized_) {
+    return kModbusServerMaxClients;
+  }
+  return (uint8_t)prefs_.getUChar(kKeyMbSrvMaxCli, kModbusServerMaxClients);
+}
+
+bool EepromManager::setServerMaxClients(uint8_t maxClients) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Server Max Clients\n");
+    return false;
+  }
+  if (maxClients < 1 || maxClients > 8) {
+    LOGE("EEPROM: Invalid Server Max Clients (must be 1-8)\n");
+    return false;
+  }
+  if (prefs_.putUChar(kKeyMbSrvMaxCli, maxClients) == 0) {
+    LOGE("EEPROM: Failed to write Server Max Clients\n");
+    return false;
+  }
+  LOGI("EEPROM: Server Max Clients updated: %u\n", maxClients);
+  return true;
+}
+
+uint32_t EepromManager::getServerTimeoutMs() {
+  if (!initialized_) {
+    return kModbusServerTimeoutMs;
+  }
+  return prefs_.getULong(kKeyMbSrvTout, kModbusServerTimeoutMs);
+}
+
+bool EepromManager::setServerTimeoutMs(uint32_t timeoutMs) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Server Timeout\n");
+    return false;
+  }
+  if (timeoutMs < 1000 || timeoutMs > 120000) {
+    LOGE("EEPROM: Invalid Server Timeout (must be 1000-120000 ms)\n");
+    return false;
+  }
+  if (prefs_.putULong(kKeyMbSrvTout, timeoutMs) == 0) {
+    LOGE("EEPROM: Failed to write Server Timeout\n");
+    return false;
+  }
+  LOGI("EEPROM: Server Timeout updated: %lu ms\n", timeoutMs);
   return true;
 }
 

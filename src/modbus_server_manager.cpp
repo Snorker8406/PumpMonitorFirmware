@@ -3,6 +3,7 @@
 #include "log.hpp"
 #include "mqtt_manager.hpp"
 #include "network_manager.hpp"
+#include "eeprom_manager.hpp"
 
 // El Logging.h interno de eModbus define macros LOG_LEVEL_ERROR/INFO/DEBUG que
 // chocan con el enum LogLevel de log.hpp. Incluimos log.hpp primero (para que el
@@ -60,10 +61,17 @@ void ModbusServerManager::begin() {
     return;
   }
 
+  // Leer config persistida en EEPROM (defaults de app_config si no existe).
+  auto &eeprom = EepromManager::instance();
+  const uint8_t  serverUnitId    = eeprom.getServerUnitId();
+  const uint16_t serverPort      = eeprom.getServerPort();
+  const uint8_t  serverMaxClient = eeprom.getServerMaxClients();
+  const uint32_t serverTimeoutMs = eeprom.getServerTimeoutMs();
+
   // Worker FC06 (Write Single Holding Register).
   // Request:  serverID, FC, address(2), value(2)
   // Response: eco de la request.
-  s_mbServer.registerWorker(kModbusServerUnitId, WRITE_HOLD_REGISTER,
+  s_mbServer.registerWorker(serverUnitId, WRITE_HOLD_REGISTER,
       [](ModbusMessage request) -> ModbusMessage {
         uint16_t address = 0;
         uint16_t value = 0;
@@ -87,7 +95,7 @@ void ModbusServerManager::begin() {
   // Worker FC16 (Write Multiple Holding Registers).
   // Request:  serverID, FC, startAddress(2), wordCount(2), byteCount(1), data...
   // Response: serverID, FC, startAddress(2), wordCount(2)
-  s_mbServer.registerWorker(kModbusServerUnitId, WRITE_MULT_REGISTERS,
+  s_mbServer.registerWorker(serverUnitId, WRITE_MULT_REGISTERS,
       [](ModbusMessage request) -> ModbusMessage {
         uint16_t address = 0;
         uint16_t words = 0;
@@ -113,11 +121,11 @@ void ModbusServerManager::begin() {
       });
 
   // Arrancar el servidor: puerto, clientes máx, timeout, core.
-  s_mbServer.start(kModbusServerPort, kModbusServerMaxClients, kModbusServerTimeoutMs,
+  s_mbServer.start(serverPort, serverMaxClient, serverTimeoutMs,
                    kModbusServerTaskCore);
 
   LOGI("Modbus Server iniciado | UnitID=%u | puerto=%u | maxClientes=%u | regs=%u\n",
-       kModbusServerUnitId, kModbusServerPort, kModbusServerMaxClients, kModbusServerRegCount);
+       serverUnitId, serverPort, serverMaxClient, kModbusServerRegCount);
 }
 
 void ModbusServerManager::process() {

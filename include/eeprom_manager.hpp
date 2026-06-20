@@ -37,6 +37,18 @@ class EepromManager {
   // Tipos de coil: 1 carácter por coil (A=Alarm, N=Notification, C=Confirmation).
   String   getAlarmCoilsTypes();
   bool     setAlarmCoilsTypes(const char* types);
+
+  // ── Modbus Server (esclavo TCP) ──
+  // Parámetros del servidor Modbus persistidos en EEPROM. Se leen en
+  // ModbusServerManager::begin(); los cambios se aplican tras reiniciar.
+  uint8_t  getServerUnitId();
+  bool     setServerUnitId(uint8_t unitId);
+  uint16_t getServerPort();
+  bool     setServerPort(uint16_t port);
+  uint8_t  getServerMaxClients();
+  bool     setServerMaxClients(uint8_t maxClients);
+  uint32_t getServerTimeoutMs();
+  bool     setServerTimeoutMs(uint32_t timeoutMs);
   
   // Device ID
   int32_t getDeviceID();
@@ -150,6 +162,10 @@ class EepromManager {
   static constexpr const char* kKeyAlarmCount = "almCount";
   static constexpr const char* kKeyAlarmFunc = "almFunc";
   static constexpr const char* kKeyAlarmTypes = "almTypes";
+  static constexpr const char* kKeyMbSrvUnit = "mbSrvUnit";
+  static constexpr const char* kKeyMbSrvPort = "mbSrvPort";
+  static constexpr const char* kKeyMbSrvMaxCli = "mbSrvMaxCli";
+  static constexpr const char* kKeyMbSrvTout = "mbSrvTout";
   static constexpr const char* kDefaultUrl = "https://pumpmonitor.agrotecsa.com.mx/";
   static constexpr uint16_t kDefaultRTInterval = 3;
   static constexpr uint16_t kDefaultIVInterval = 60;  // 1 minuto por defecto

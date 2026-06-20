@@ -197,6 +197,59 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Alarm config partially rejected (valores fuera de rango)\n");
     }
   }
+  // Procesar topic serverConfig: configurar el servidor Modbus TCP (esclavo)
+  // Payload: unitId,port,maxClients,timeoutMs
+  //   unitId:     1-247  (Server/Unit ID que atiende este device)
+  //   port:       1-65535 (puerto TCP de escucha; estándar = 502)
+  //   maxClients: 1-8    (conexiones simultáneas)
+  //   timeoutMs:  1000-120000 (timeout de inactividad por cliente, ms)
+  //   Ej: "2,502,4,10000"
+  // Los cambios se persisten en EEPROM y se aplican al reiniciar el dispositivo.
+  else if (strstr(topic, "/saveModbusServerConfig") != nullptr) {
+    unsigned int unitId, port, maxClients, timeoutMs;
+    int parsed = sscanf(msg, "%u,%u,%u,%u", &unitId, &port, &maxClients, &timeoutMs);
+    if (parsed != 4) {
+      LOGE("MQTT: Invalid serverConfig format. Expected: unitId,port,maxClients,timeoutMs\n");
+      return;
+    }
+    bool ok = true;
+    ok &= eeprom.setServerUnitId((uint8_t)unitId);
+    ok &= eeprom.setServerPort((uint16_t)port);
+    ok &= eeprom.setServerMaxClients((uint8_t)maxClients);
+    ok &= eeprom.setServerTimeoutMs((uint32_t)timeoutMs);
+    if (ok) {
+      LOGI("MQTT: Modbus Server config updated (unitId=%u port=%u maxClients=%u timeout=%u ms). Reinicie para aplicar.\n",
+           unitId, port, maxClients, timeoutMs);
+    } else {
+      LOGE("MQTT: Modbus Server config partially rejected (valores fuera de rango)\n");
+    }
+  }
+  // Procesar getModbusServerConfig: devolver la configuracion actual del servidor Modbus TCP
+  // Response topic: device/{MAC}_var/modbusServerConfig
+  // Payload: unitId,port,maxClients,timeoutMs
+  else if (strstr(topic, "/getModbusServerConfig") != nullptr) {
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') macNoColon[idx++] = *p;
+    }
+
+    char srvBuf[48];
+    snprintf(srvBuf, sizeof(srvBuf), "%u,%u,%u,%lu",
+             eeprom.getServerUnitId(), eeprom.getServerPort(),
+             eeprom.getServerMaxClients(), (unsigned long)eeprom.getServerTimeoutMs());
+
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/modbusServerConfig", macNoColon);
+
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, srvBuf)) {
+      LOGI("MQTT: Published serverConfig (%s)\n", srvBuf);
+    } else {
+      LOGE("MQTT: Failed to publish serverConfig\n");
+    }
+  }
   // Procesar startRealTime: activar modo Real Time por X segundos
   else if (strstr(topic, "/startRealTime") != nullptr) {
     uint32_t durationSeconds = atoi(msg);
@@ -719,6 +772,14 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       buildActuatorsString(actBuf, sizeof(actBuf));
       value = String(actBuf);
       snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/actuators", macNoColon);
+    }
+    else if (strcmp(varName, "serverConfig") == 0) {
+      char srvBuf[48];
+      snprintf(srvBuf, sizeof(srvBuf), "%u,%u,%u,%lu",
+               eeprom.getServerUnitId(), eeprom.getServerPort(),
+               eeprom.getServerMaxClients(), (unsigned long)eeprom.getServerTimeoutMs());
+      value = String(srvBuf);
+      snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/modbusServerConfig", macNoColon);
     }
     else {
       LOGW("MQTT: Unknown variable requested: %s\n", varName);
