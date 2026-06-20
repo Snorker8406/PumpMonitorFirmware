@@ -159,6 +159,9 @@ void realTimeModbusTask(void *) {
       char realTimeTopic[48];
       snprintf(realTimeTopic, sizeof(realTimeTopic), "device/%s_realTime", macNoColon);
       
+      // Obtener deviceId para incluir en el mensaje de alarmas
+      int32_t deviceId = EepromManager::instance().getDeviceID();
+      
       // Leer cada dispositivo Modbus y publicar
       std::vector<ModbusDeviceData> devicesData;
       devicesData.reserve(EepromManager::instance().getModbusDeviceCount());
@@ -200,6 +203,45 @@ void realTimeModbusTask(void *) {
         
         // Liberar memoria
         devicesData.clear();
+
+        // ----- Lectura de alarmas (coils) integrada -----
+        // Tras leer los registros de cada device, leer el rango de coils/discrete
+        // inputs configurado y publicarlo por MQTT.
+        {
+          auto &eeprom = EepromManager::instance();
+          uint8_t  almDeviceIndex  = eeprom.getAlarmDeviceIndex();
+          uint16_t almStartAddress = eeprom.getAlarmStartAddress();
+          uint16_t almCount        = eeprom.getAlarmCount();
+          bool     almDiscrete     = eeprom.getAlarmDiscreteInputs();
+          String   almCoilsTypes   = eeprom.getAlarmCoilsTypes();
+
+          std::vector<bool> almStates;
+          if (modbus.readBooleans(almDeviceIndex, almStartAddress, almCount, almStates, almDiscrete)) {
+            uint8_t almModelId = eeprom.getModbusDevice(almDeviceIndex).modbusModelId;
+
+            // Topic device/{MAC}_var/alarms
+            char alarmsTopic[48];
+            snprintf(alarmsTopic, sizeof(alarmsTopic), "device/%s_var/alarms", macNoColon);
+
+            // Publicación: {deviceId},{modbusModelId},{coilsTypes},{rawData}
+            char almPayload[128];
+            int almOffset = snprintf(almPayload, sizeof(almPayload), "%d,%u,%s,",
+                                     deviceId, almModelId, almCoilsTypes.c_str());
+            for (size_t i = 0; i < almStates.size() && almOffset < (int)sizeof(almPayload) - 2; i++) {
+              almPayload[almOffset++] = almStates[i] ? '1' : '0';
+            }
+            almPayload[almOffset] = '\0';
+
+            if (mqtt.publish(alarmsTopic, almPayload)) {
+              LOGI("RT Alarms: published %s\n", almPayload);
+            } else {
+              LOGE("RT Alarms: failed to publish %s\n", almPayload);
+            }
+          } else {
+            LOGE("RT Alarms: Modbus read failed (dev=%u addr=%u count=%u)\n",
+                 almDeviceIndex, almStartAddress, almCount);
+          }
+        }
         
         // Esperar intervalo configurado
         vTaskDelay(pdMS_TO_TICKS(intervalSec * 1000));
@@ -338,6 +380,55 @@ void instantValuesTask(void *) {
         recordsBuffer.clear();
       } else {
         LOGE("IV: Modbus read failed\n");
+      }
+
+      // ----- Lectura de alarmas (coils) integrada -----
+      // Tras leer los registros de cada device, leer el rango de coils/discrete
+      // inputs configurado, publicarlo y guardarlo en SD.
+      {
+        auto &eeprom = EepromManager::instance();
+        uint8_t  almDeviceIndex  = eeprom.getAlarmDeviceIndex();
+        uint16_t almStartAddress = eeprom.getAlarmStartAddress();
+        uint16_t almCount        = eeprom.getAlarmCount();
+        bool     almDiscrete     = eeprom.getAlarmDiscreteInputs();
+        String   almCoilsTypes   = eeprom.getAlarmCoilsTypes();
+
+        std::vector<bool> almStates;
+        if (modbus.readBooleans(almDeviceIndex, almStartAddress, almCount, almStates, almDiscrete)) {
+          uint8_t almModelId = eeprom.getModbusDevice(almDeviceIndex).modbusModelId;
+
+          // Topic device/{MAC}_var/alarms
+          char alarmsTopic[48];
+          snprintf(alarmsTopic, sizeof(alarmsTopic), "device/%s_var/alarms", macNoColon);
+
+          // Publicación: {deviceId},{modbusModelId},{coilsTypes},{rawData}
+          char almPayload[128];
+          int almOffset = snprintf(almPayload, sizeof(almPayload), "%d,%u,%s,",
+                                   deviceId, almModelId, almCoilsTypes.c_str());
+          for (size_t i = 0; i < almStates.size() && almOffset < (int)sizeof(almPayload) - 2; i++) {
+            almPayload[almOffset++] = almStates[i] ? '1' : '0';
+          }
+          almPayload[almOffset] = '\0';
+
+          if (mqtt.publish(alarmsTopic, almPayload)) {
+            LOGI("Alarms: published %s\n", almPayload);
+          } else {
+            LOGE("Alarms: failed to publish %s\n", almPayload);
+          }
+
+          // Guardar en SD: {timestamp},{modbusModelId},{coilsTypes},{CoilsValues}
+          if (sd.isAvailable()) {
+            unsigned long almTs = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
+            if (sd.writeAlarmRecord(almTs, almModelId, almCoilsTypes.c_str(), almStates)) {
+              LOGI("SD: alarm record saved\n");
+            } else {
+              LOGE("SD: failed to write alarm record\n");
+            }
+          }
+        } else {
+          LOGE("Alarms: Modbus read failed (dev=%u addr=%u count=%u)\n",
+               almDeviceIndex, almStartAddress, almCount);
+        }
       }
     }
     

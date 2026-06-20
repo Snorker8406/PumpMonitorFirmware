@@ -158,6 +158,45 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to update Device ID\n");
     }
   }
+  // Procesar topic alarmConfig: configurar lectura de coils de alarmas
+  // Payload: deviceIndex,startAddress,count[,funcCode[,coilsTypes]]
+  //   funcCode opcional: 1 = Coils (FC01), 2 = Discrete Inputs (FC02)
+  //   coilsTypes opcional: 1 carácter por coil (A=Alarm, N=Notification, C=Confirmation)
+  //   Ej: "1,0,4,2,CNAA"
+  // Solo se aplican los campos válidos; cualquier inválido se rechaza.
+  else if (strstr(topic, "/alarmConfig") != nullptr) {
+    unsigned int devIdx, startAddr, count, funcCode = 0;
+    char coilsTypes[64] = {0};
+    int parsed = sscanf(msg, "%u,%u,%u,%u,%63[A-Za-z]",
+                        &devIdx, &startAddr, &count, &funcCode, coilsTypes);
+    if (parsed < 3) {
+      LOGE("MQTT: Invalid alarmConfig format. Expected: deviceIndex,startAddress,count[,funcCode[,coilsTypes]]\n");
+      return;
+    }
+    bool ok = true;
+    ok &= eeprom.setAlarmDeviceIndex((uint8_t)devIdx);
+    ok &= eeprom.setAlarmStartAddress((uint16_t)startAddr);
+    ok &= eeprom.setAlarmCount((uint16_t)count);
+    if (parsed >= 4) {
+      if (funcCode == 1 || funcCode == 2) {
+        ok &= eeprom.setAlarmDiscreteInputs(funcCode == 2);
+      } else {
+        LOGE("MQTT: Invalid alarm funcCode (use 1=Coils or 2=DiscreteInputs)\n");
+        ok = false;
+      }
+    }
+    if (parsed >= 5) {
+      ok &= eeprom.setAlarmCoilsTypes(coilsTypes);
+    }
+    if (ok) {
+      LOGI("MQTT: Alarm config updated (dev=%u start=%u count=%u func=%s types=%s)\n",
+           devIdx, startAddr, count,
+           (parsed >= 4) ? (funcCode == 2 ? "FC02" : "FC01") : "unchanged",
+           (parsed >= 5) ? coilsTypes : "unchanged");
+    } else {
+      LOGE("MQTT: Alarm config partially rejected (valores fuera de rango)\n");
+    }
+  }
   // Procesar startRealTime: activar modo Real Time por X segundos
   else if (strstr(topic, "/startRealTime") != nullptr) {
     uint32_t durationSeconds = atoi(msg);

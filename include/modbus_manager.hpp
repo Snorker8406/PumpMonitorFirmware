@@ -26,6 +26,16 @@ class ModbusManager {
   bool readDevice(size_t deviceIndex, std::vector<float> &values, std::vector<uint16_t> *rawData = nullptr);
   bool readAllDevices(std::vector<ModbusDeviceData> &devicesData);
 
+  // Lectura síncrona de booleanos: Coils (FC01) o Discrete Inputs (FC02).
+  // Útil para leer estados de alarmas u otros bits de estado.
+  //   startAddress: primera dirección a leer
+  //   count: número de bits a leer (1..2000)
+  //   states: vector de salida con un bool por bit (states[0] = startAddress)
+  //   discreteInputs: false = Coils (FC01), true = Discrete Inputs (FC02)
+  // Thread-safe: serializa el acceso al cliente compartido.
+  bool readBooleans(size_t deviceIndex, uint16_t startAddress, uint16_t count,
+                    std::vector<bool> &states, bool discreteInputs = false);
+
   // Escritura síncrona de un solo Holding Register (FC06)
   bool writeRegister(size_t deviceIndex, uint16_t address, const char* value);
 

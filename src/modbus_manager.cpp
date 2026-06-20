@@ -161,6 +161,83 @@ float ModbusManager::regsToFloat(uint16_t reg1, uint16_t reg2) {
   return converter.f;
 }
 
+bool ModbusManager::readBooleans(size_t deviceIndex, uint16_t startAddress, uint16_t count,
+                                 std::vector<bool> &states, bool discreteInputs) {
+  states.clear();
+
+  if (deviceIndex >= EepromManager::instance().getModbusDeviceCount()) {
+    LOGE("readBooleans: invalid device index %u\n", deviceIndex);
+    return false;
+  }
+
+  if (count == 0 || count > 2000) {
+    LOGE("readBooleans: count fuera de rango (1..2000): %u\n", count);
+    return false;
+  }
+
+  if (!NetworkManager::instance().isConnected()) {
+    return false;
+  }
+
+  // Serializar acceso al cliente compartido
+  if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(15000)) != pdTRUE) {
+    LOGE("readBooleans[%u] mutex timeout\n", deviceIndex);
+    return false;
+  }
+
+  const auto &config = EepromManager::instance().getModbusDevice(deviceIndex);
+  s_mbClient.setTarget(config.ip, 502);
+
+  // Function code: Coils (FC01) o Discrete Inputs (FC02)
+  uint8_t fc = discreteInputs ? READ_DISCR_INPUT : READ_COIL;
+
+  // Lectura síncrona bloqueante (bloquea esta tarea hasta respuesta o timeout)
+  uint32_t tok = ++token_;
+  ModbusMessage response = s_mbClient.syncRequest(
+    tok,
+    config.unitId,
+    fc,
+    startAddress,
+    count
+  );
+
+  // Verificar error
+  Error err = response.getError();
+  if (err != SUCCESS) {
+    ModbusError me(err);
+    LOGE("readBooleans[%u] %s addr=%u count=%u: error %02X - %s\n",
+         deviceIndex, config.modbusModelName, startAddress, count,
+         (int)err, (const char *)me);
+    xSemaphoreGive(mutex_);
+    return false;
+  }
+
+  // Respuesta FC01/FC02: serverID, FC, byteCount, data... (1 bit por coil, LSB primero)
+  uint8_t byteCount = 0;
+  response.get(2, byteCount);
+
+  // Liberar mutex después de la lectura (response es copia local)
+  xSemaphoreGive(mutex_);
+
+  // Desempaquetar bits: el bit i está en el byte i/8, posición i%8
+  states.reserve(count);
+  for (uint16_t i = 0; i < count; i++) {
+    uint8_t byteIndex = i / 8;
+    if (byteIndex >= byteCount) {
+      break;  // El esclavo devolvió menos datos de los solicitados
+    }
+    uint8_t dataByte = 0;
+    response.get(3 + byteIndex, dataByte);
+    states.push_back((dataByte >> (i % 8)) & 0x01);
+  }
+
+  LOGD("readBooleans[%u] read %u bits (%s) from %s\n",
+       deviceIndex, states.size(),
+       discreteInputs ? "discrete inputs" : "coils", config.modbusModelName);
+
+  return true;
+}
+
 bool ModbusManager::writeRegister(size_t deviceIndex, uint16_t address, const char* value) {
   if (deviceIndex >= EepromManager::instance().getModbusDeviceCount()) {
     LOGE("writeRegister: invalid device index %u\n", deviceIndex);

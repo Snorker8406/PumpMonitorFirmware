@@ -27,6 +27,11 @@ class SdManager {
   // Operaciones de escritura
   bool writeDataRecord(const SensorDataRecord &record);
   bool writeDataBatch(const std::vector<SensorDataRecord> &records);
+
+  // Guardar un registro de alarmas (coils) en el archivo diario.
+  // Formato: {timestamp},{modbusModelId},{coilsTypes},{CoilsValues}
+  bool writeAlarmRecord(unsigned long timestamp, uint8_t modbusModelId,
+                        const char* coilsTypes, const std::vector<bool> &states);
   
   // Logging de errores
   bool writeErrorLog(const char* level, const char* message);

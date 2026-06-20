@@ -23,6 +23,21 @@ class EepromManager {
   uint16_t getInstantValuesIntervalSec();
   bool setInstantValuesIntervalSec(uint16_t seconds);
   
+  // ── Alarmas (lectura de Coils configurable) ──
+  // Dispositivo Modbus, dirección inicial, cantidad de coils e intervalo.
+  uint8_t  getAlarmDeviceIndex();
+  bool     setAlarmDeviceIndex(uint8_t index);
+  uint16_t getAlarmStartAddress();
+  bool     setAlarmStartAddress(uint16_t address);
+  uint16_t getAlarmCount();
+  bool     setAlarmCount(uint16_t count);
+  // true = FC02 Discrete Inputs; false = FC01 Coils
+  bool     getAlarmDiscreteInputs();
+  bool     setAlarmDiscreteInputs(bool discreteInputs);
+  // Tipos de coil: 1 carácter por coil (A=Alarm, N=Notification, C=Confirmation).
+  String   getAlarmCoilsTypes();
+  bool     setAlarmCoilsTypes(const char* types);
+  
   // Device ID
   int32_t getDeviceID();
   bool setDeviceID(int32_t id);
@@ -130,6 +145,11 @@ class EepromManager {
   static constexpr const char* kKeyModbusDevs = "mbDevs";
   static constexpr const char* kKeyActDevIdx = "actDevIdx";
   static constexpr const char* kKeyActCoils = "actCoils";
+  static constexpr const char* kKeyAlarmDevIdx = "almDevIdx";
+  static constexpr const char* kKeyAlarmStart = "almStart";
+  static constexpr const char* kKeyAlarmCount = "almCount";
+  static constexpr const char* kKeyAlarmFunc = "almFunc";
+  static constexpr const char* kKeyAlarmTypes = "almTypes";
   static constexpr const char* kDefaultUrl = "https://pumpmonitor.agrotecsa.com.mx/";
   static constexpr uint16_t kDefaultRTInterval = 3;
   static constexpr uint16_t kDefaultIVInterval = 60;  // 1 minuto por defecto

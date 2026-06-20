@@ -62,6 +62,24 @@ void EepromManager::begin() {
     LOGI("EEPROM: Instant Values Interval loaded: %u sec\n", currentIVInterval);
   }
   
+  // Sembrar configuración de alarmas si no existe (start=0 es válido, usar isKey)
+  if (!prefs_.isKey(kKeyAlarmDevIdx)) {
+    setAlarmDeviceIndex((uint8_t)kAlarmModbusDeviceIndex);
+  }
+  if (!prefs_.isKey(kKeyAlarmStart)) {
+    setAlarmStartAddress(kAlarmStartAddress);
+  }
+  if (!prefs_.isKey(kKeyAlarmCount)) {
+    setAlarmCount(kAlarmCount);
+  }
+  if (!prefs_.isKey(kKeyAlarmFunc)) {
+    setAlarmDiscreteInputs(kAlarmDiscreteInputs);
+  }
+  if (!prefs_.isKey(kKeyAlarmTypes)) {
+    setAlarmCoilsTypes(kAlarmCoilsTypes);
+  }
+  LOGI("EEPROM: Alarm config | devIdx=%u start=%u count=%u\n",
+       getAlarmDeviceIndex(), getAlarmStartAddress(), getAlarmCount());  
   // Verificar si existe Device ID en EEPROM
   int32_t currentDeviceID = prefs_.getInt(kKeyDeviceID, -1);
   
@@ -181,6 +199,133 @@ bool EepromManager::setInstantValuesIntervalSec(uint16_t seconds) {
   }
 
   LOGI("EEPROM: Instant Values Interval updated: %u sec\n", seconds);
+  return true;
+}
+
+uint8_t EepromManager::getAlarmDeviceIndex() {
+  if (!initialized_) {
+    return (uint8_t)kAlarmModbusDeviceIndex;
+  }
+  return prefs_.getUChar(kKeyAlarmDevIdx, (uint8_t)kAlarmModbusDeviceIndex);
+}
+
+bool EepromManager::setAlarmDeviceIndex(uint8_t index) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Alarm Device Index\n");
+    return false;
+  }
+  if (index >= kMaxModbusDevices) {
+    LOGE("EEPROM: Invalid Alarm Device Index (max %u)\n", (unsigned)kMaxModbusDevices);
+    return false;
+  }
+  if (prefs_.putUChar(kKeyAlarmDevIdx, index) == 0) {
+    LOGE("EEPROM: Failed to write Alarm Device Index\n");
+    return false;
+  }
+  LOGI("EEPROM: Alarm Device Index updated: %u\n", index);
+  return true;
+}
+
+uint16_t EepromManager::getAlarmStartAddress() {
+  if (!initialized_) {
+    return kAlarmStartAddress;
+  }
+  return prefs_.getUShort(kKeyAlarmStart, kAlarmStartAddress);
+}
+
+bool EepromManager::setAlarmStartAddress(uint16_t address) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Alarm Start Address\n");
+    return false;
+  }
+  // Cualquier dirección 0..65535 es válida.
+  if (prefs_.putUShort(kKeyAlarmStart, address) == 0) {
+    LOGE("EEPROM: Failed to write Alarm Start Address\n");
+    return false;
+  }
+  LOGI("EEPROM: Alarm Start Address updated: %u\n", address);
+  return true;
+}
+
+uint16_t EepromManager::getAlarmCount() {
+  if (!initialized_) {
+    return kAlarmCount;
+  }
+  return prefs_.getUShort(kKeyAlarmCount, kAlarmCount);
+}
+
+bool EepromManager::setAlarmCount(uint16_t count) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Alarm Count\n");
+    return false;
+  }
+  if (count == 0 || count > 2000) {
+    LOGE("EEPROM: Invalid Alarm Count (must be 1-2000)\n");
+    return false;
+  }
+  if (prefs_.putUShort(kKeyAlarmCount, count) == 0) {
+    LOGE("EEPROM: Failed to write Alarm Count\n");
+    return false;
+  }
+  LOGI("EEPROM: Alarm Count updated: %u\n", count);
+  return true;
+}
+
+bool EepromManager::getAlarmDiscreteInputs() {
+  if (!initialized_) {
+    return kAlarmDiscreteInputs;
+  }
+  return prefs_.getBool(kKeyAlarmFunc, kAlarmDiscreteInputs);
+}
+
+bool EepromManager::setAlarmDiscreteInputs(bool discreteInputs) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Alarm Function\n");
+    return false;
+  }
+  if (!prefs_.putBool(kKeyAlarmFunc, discreteInputs)) {
+    LOGE("EEPROM: Failed to write Alarm Function\n");
+    return false;
+  }
+  LOGI("EEPROM: Alarm Function updated: %s\n",
+       discreteInputs ? "FC02 Discrete Inputs" : "FC01 Coils");
+  return true;
+}
+
+String EepromManager::getAlarmCoilsTypes() {
+  if (!initialized_) {
+    return String(kAlarmCoilsTypes);
+  }
+  return prefs_.getString(kKeyAlarmTypes, kAlarmCoilsTypes);
+}
+
+bool EepromManager::setAlarmCoilsTypes(const char* types) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Alarm Coil Types\n");
+    return false;
+  }
+  if (!types) {
+    LOGE("EEPROM: Invalid Alarm Coil Types (null)\n");
+    return false;
+  }
+  size_t len = strlen(types);
+  if (len == 0 || len > kAlarmCoilsTypesMaxLen) {
+    LOGE("EEPROM: Invalid Alarm Coil Types length (1..%u)\n", (unsigned)kAlarmCoilsTypesMaxLen);
+    return false;
+  }
+  // Validar que cada carácter sea A/N/C (mayúsculas o minúsculas)
+  for (size_t i = 0; i < len; i++) {
+    char c = toupper((unsigned char)types[i]);
+    if (c != 'A' && c != 'N' && c != 'C') {
+      LOGE("EEPROM: Invalid Alarm Coil Type '%c' (use A/N/C)\n", types[i]);
+      return false;
+    }
+  }
+  if (prefs_.putString(kKeyAlarmTypes, types) == 0) {
+    LOGE("EEPROM: Failed to write Alarm Coil Types\n");
+    return false;
+  }
+  LOGI("EEPROM: Alarm Coil Types updated: %s\n", types);
   return true;
 }
 

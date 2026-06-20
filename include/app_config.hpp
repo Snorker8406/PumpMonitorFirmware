@@ -123,6 +123,24 @@ constexpr UBaseType_t kActuatorTaskPriority = 1;
 constexpr BaseType_t kActuatorTaskCore = APP_CPU_NUM;  // Core 1
 constexpr uint32_t kActuatorTaskPeriodMs = 100;        // Periodo de evaluación de escrituras pendientes
 
+// ── Alarmas (lectura de Coils/booleanos por Modbus) ──
+// Lee un rango de coils (FC01) de un dispositivo Modbus y publica el estado por
+// MQTT, igual que la task de Instant Values. Todos los valores son configurables
+// vía EEPROM (semilla inicial con estos defaults).
+// Notación Modbus: 000001..000006 equivale a startAddress=0, count=6.
+constexpr size_t      kAlarmModbusDeviceIndex = 1;   // Dispositivo Modbus destino (índice en la lista; default 2)
+constexpr uint16_t    kAlarmStartAddress      = 0;   // Dirección inicial (0 = coil 000001)
+constexpr uint16_t    kAlarmCount             = 6;   // Número de coils a leer (000001..000006)
+constexpr bool        kAlarmDiscreteInputs    = true; // true = FC02 Discrete Inputs; false = FC01 Coils
+// Tipos de cada coil (1 carácter por coil, en el mismo orden que se leen):
+//   A = Alarm, N = Notification, C = Confirmation (mayúsculas o minúsculas).
+// Ej: "CNAA" = 1 confirmación, 1 notificación, 2 alarmas. Tamaño fijo en EEPROM.
+constexpr const char* kAlarmCoilsTypes        = "AAAAAA";  // default: 6 alarmas
+constexpr size_t      kAlarmCoilsTypesMaxLen  = 40;   // longitud máxima almacenable
+constexpr uint32_t    kAlarmTaskStackWords    = 4096;
+constexpr UBaseType_t kAlarmTaskPriority      = 1;
+constexpr BaseType_t  kAlarmTaskCore          = APP_CPU_NUM;  // Core 1
+
 // ── Modbus Server (esclavo TCP: dispositivos externos escriben en este device) ──
 constexpr uint8_t kModbusServerUnitId = 2;             // Unit/Server ID que atiende este device
 constexpr uint16_t kModbusServerPort = 502;            // Puerto TCP de escucha (estándar Modbus = 502)

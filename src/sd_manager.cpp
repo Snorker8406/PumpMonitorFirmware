@@ -200,6 +200,34 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
   return true;
 }
 
+bool SdManager::writeAlarmRecord(unsigned long timestamp, uint8_t modbusModelId,
+                                 const char* coilsTypes, const std::vector<bool> &states) {
+  if (!initialized_) {
+    return false;
+  }
+
+  char filename[48];
+  generateFilename(filename, sizeof(filename));
+
+  File file = SD.open(filename, FILE_APPEND);
+  if (!file) {
+    LOGE("Failed to open file for alarm writing\n");
+    return false;
+  }
+
+  // Formato: {timestamp},{modbusModelId},{coilsTypes},{CoilsValues}
+  file.printf("%lu,%u,%s,", timestamp, modbusModelId, coilsTypes ? coilsTypes : "");
+
+  // Valores de coils: un '0'/'1' por coil
+  for (size_t i = 0; i < states.size(); i++) {
+    file.print(states[i] ? '1' : '0');
+  }
+  file.println();
+
+  file.close();
+  return true;
+}
+
 uint64_t SdManager::getTotalBytes() const {
   return initialized_ ? SD.totalBytes() : 0;
 }
