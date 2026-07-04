@@ -57,11 +57,12 @@ void ActuatorManager::reloadConfig() {
   auto &eeprom = EepromManager::instance();
   modbusDeviceIndex_ = eeprom.getActuatorModbusDeviceIndex();
   for (size_t i = 0; i < kActuatorCoilCount; i++) {
-    coilOnAddresses_[i]  = eeprom.getActuatorCoilOnAddress(i);
-    coilOnValues_[i]     = eeprom.getActuatorCoilOnValue(i);
-    coilOffAddresses_[i] = eeprom.getActuatorCoilOffAddress(i);
-    coilOffValues_[i]    = eeprom.getActuatorCoilOffValue(i);
-    confirmationsEnabled_[i] = eeprom.getActuatorCoilEnabled(i);
+    coilOnAddresses_[i]       = eeprom.getActuatorCoilOnAddress(i);
+    coilOnValues_[i]          = eeprom.getActuatorCoilOnValue(i);
+    coilOffAddresses_[i]      = eeprom.getActuatorCoilOffAddress(i);
+    coilOffValues_[i]         = eeprom.getActuatorCoilOffValue(i);
+    confirmationsEnabled_[i]  = eeprom.getActuatorCoilEnabled(i);
+    confirmAlarmIndex_[i]     = eeprom.getActuatorCoilConfirmAlarmIndex(i);
   }
   LOGI("ActuatorManager config loaded (deviceIndex=%u)\n", (unsigned)modbusDeviceIndex_);
 }
@@ -164,18 +165,13 @@ void ActuatorManager::setConfirmation(size_t coilIndex, uint8_t confirmIndex, bo
   }
 
   // Publicar estado del coil: "index,estados" (ej: "1,110").
-  // Se omiten los estados completos 111 (arranque) y 000 (paro): esos ya no se
-  // confirman al servidor.
-  bool allOn = true;
-  bool allOff = true;
-  for (uint8_t i = 0; i < kActuatorConfirmCount; i++) {
-    if (states[i] == '1') {
-      allOff = false;
-    } else {
-      allOn = false;
-    }
-  }
-  if (!allOn && !allOff) {
+  // Se omite la publicación SOLO cuando se disparó la escritura Modbus, porque
+  // en esos casos el servidor recibe la confirmación vía el coil:
+  //   - 110 -> 111 (arranque, triggerOn)
+  //   - 001 -> 000 (paro, triggerOff)
+  // Si se llega a 111/000 por retroceso ("arrepentirse"), NO se dispara Modbus
+  // (p.ej. 100 -> 000 o 011 -> 111), por lo que SÍ se debe notificar el estado.
+  if (applied && !triggerOn && !triggerOff) {
     char payload[24];
     snprintf(payload, sizeof(payload), "%u,%s", (unsigned)coilIndex, states);
     publishStatus("coilStatus", payload);
@@ -239,6 +235,64 @@ void ActuatorManager::publishAllStatus() {
 
   LOGI("Actuator statusCoils: %s\n", payload);
   publishStatus("statusCoils", payload);
+}
+
+bool ActuatorManager::initializeFromAlarms() {
+  auto &eeprom = EepromManager::instance();
+  uint8_t  almDeviceIndex  = eeprom.getAlarmDeviceIndex();
+  uint16_t almStartAddress = eeprom.getAlarmStartAddress();
+  uint16_t almCount        = eeprom.getAlarmCount();
+  bool     almDiscrete     = eeprom.getAlarmDiscreteInputs();
+
+  // Lectura bloqueante (thread-safe internamente) del rango de alarmas.
+  std::vector<bool> almStates;
+  if (!ModbusManager::instance().readBooleans(almDeviceIndex, almStartAddress,
+                                              almCount, almStates, almDiscrete)) {
+    LOGE("ActuatorInit: lectura de alarmas fallida (dev=%u addr=%u count=%u)\n",
+         (unsigned)almDeviceIndex, (unsigned)almStartAddress, (unsigned)almCount);
+    return false;
+  }
+
+  for (size_t i = 0; i < kActuatorCoilCount; i++) {
+    uint8_t alarmIdx = confirmAlarmIndex_[i];
+    if (alarmIdx >= almStates.size()) {
+      LOGW("ActuatorInit: coil %u confirmAlarmIndex %u fuera de rango (alarmCount=%u)\n",
+           (unsigned)i, (unsigned)alarmIdx, (unsigned)almStates.size());
+      continue;
+    }
+
+    bool on = almStates[alarmIdx];
+
+    // Sincronizar los switches al estado real SIN disparar escritura Modbus
+    // (el actuador ya está físicamente en ese estado; solo reflejamos/publicamos).
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+      LOGE("ActuatorInit: mutex timeout (coil %u)\n", (unsigned)i);
+      continue;
+    }
+    for (uint8_t c = 0; c < kActuatorConfirmCount; c++) {
+      confirm_[i][c] = on;  // 111 si la alarma=1, 000 si la alarma=0
+    }
+    pendingWrite_[i] = false;  // garantizar que no quede una escritura pendiente
+
+    char states[kActuatorConfirmCount + 1];
+    for (uint8_t c = 0; c < kActuatorConfirmCount; c++) {
+      states[c] = confirm_[i][c] ? '1' : '0';
+    }
+    states[kActuatorConfirmCount] = '\0';
+    xSemaphoreGive(mutex_);
+
+    LOGI("ActuatorInit: coil %u alarm[%u]=%u -> %s\n",
+         (unsigned)i, (unsigned)alarmIdx, on ? 1 : 0, states);
+
+    // Publicar estado por coil (mismo formato que setConfirmation): "index,estados".
+    char payload[24];
+    snprintf(payload, sizeof(payload), "%u,%s", (unsigned)i, states);
+    publishStatus("coilStatus", payload);
+  }
+
+  // Publicar el resumen general de todas las coils.
+  publishAllStatus();
+  return true;
 }
 
 void ActuatorManager::triggerWrite(size_t coilIndex, bool value) {

@@ -79,13 +79,16 @@ class EepromManager {
   uint16_t getActuatorCoilOffAddress(size_t coilIndex) const;
   bool     getActuatorCoilOffValue(size_t coilIndex) const;
   bool getActuatorCoilEnabled(size_t coilIndex) const;
+  uint8_t getActuatorCoilConfirmAlarmIndex(size_t coilIndex) const;
   // Reemplaza toda la configuración de actuadores y la persiste en EEPROM.
   // onAddresses/onValues: dirección y valor a escribir en secuencia de arranque (111).
   // offAddresses/offValues: dirección y valor a escribir en secuencia de paro (000).
+  // confirmAlarmIndices: índice en el array de alarmas para confirmación de cada coil.
   bool setActuatorConfig(size_t deviceIndex,
                          const uint16_t* onAddresses, const bool* onValues,
                          const uint16_t* offAddresses, const bool* offValues,
-                         const bool* enabled);
+                         const bool* enabled,
+                         const uint8_t* confirmAlarmIndices);
   // Restablece la configuración de actuadores a los valores por defecto y persiste.
   bool clearActuatorConfig();
   
@@ -117,10 +120,11 @@ class EepromManager {
   // Estructura serializable (POD) para la configuración de cada coil del actuador.
   struct ActuatorCoilStored {
     uint16_t onAddress;
-    uint8_t  onValue;   // bool
+    uint8_t  onValue;          // bool
     uint16_t offAddress;
-    uint8_t  offValue;  // bool
-    uint8_t  enabled;   // bool
+    uint8_t  offValue;         // bool
+    uint8_t  enabled;          // bool
+    uint8_t  confirmAlarmIndex; // índice en array de alarmas
   };
 
   // Carga la configuración de actuadores desde EEPROM (o siembra con defaults).
@@ -146,6 +150,7 @@ class EepromManager {
   uint16_t actuatorCoilOffAddresses_[kActuatorCoilCount]{};
   bool     actuatorCoilOffValues_[kActuatorCoilCount]{};
   bool     actuatorCoilEnabled_[kActuatorCoilCount]{};
+  uint8_t  actuatorCoilConfirmAlarmIndex_[kActuatorCoilCount]{};
   
   static constexpr const char* kNamespace = "pumpmon";
   static constexpr const char* kKeyUrl = "webUrl";

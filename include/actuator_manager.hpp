@@ -43,6 +43,14 @@ class ActuatorManager {
   //   "index,enabled,estados;..."  (estados = "---" si confirmaciones desactivadas)
   void publishAllStatus();
 
+  // Sincroniza el estado inicial de los actuadores leyendo las alarmas por Modbus.
+  // Para cada coil usa su confirmAlarmIndex: si el bit de alarma asociado es 1,
+  // todos sus switches quedan en 111; si es 0, en 000. NO dispara escrituras
+  // Modbus (solo refleja el estado físico real ya existente) y publica el estado
+  // de cada coil y el resumen general. Devuelve true si la lectura de alarmas
+  // tuvo éxito. Llamar una vez al arranque cuando las conexiones estén listas.
+  bool initializeFromAlarms();
+
   // Procesa escrituras pendientes; llamado desde la task del actuador.
   void process();
 
@@ -65,4 +73,5 @@ class ActuatorManager {
   bool confirm_[kActuatorCoilCount][kActuatorConfirmCount]{};
   volatile bool pendingWrite_[kActuatorCoilCount]{};
   bool pendingValue_[kActuatorCoilCount]{};
+  uint8_t confirmAlarmIndex_[kActuatorCoilCount]{};
 };

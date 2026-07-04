@@ -112,6 +112,8 @@ constexpr uint8_t kActuatorConfirmCount = 3;           // Confirmaciones (boolea
 // Activar/desactivar el mecanismo de confirmaciones por cada coil (un valor por coil)
 static constexpr bool kActuatorConfirmationsEnabled[kActuatorCoilCount] = {true, true, true, true};
 constexpr size_t kActuatorModbusDeviceIndex = 1;       // Índice del dispositivo Modbus destino para los coils
+// Índice en el array de alarmas que actúa como confirmación de estado para cada coil
+static constexpr uint8_t kActuatorConfirmAlarmIndex[kActuatorCoilCount] = {0, 1, 2, 3};
 // Secuencia de ARRANQUE (llegando a 111): dirección y valor a escribir por coil
 static constexpr uint16_t kActuatorCoilOnAddresses[kActuatorCoilCount] = {0, 1, 2, 3};
 static constexpr bool     kActuatorCoilOnValues[kActuatorCoilCount]    = {true, true, true, true};

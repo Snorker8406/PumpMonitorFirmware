@@ -714,14 +714,22 @@ bool EepromManager::getActuatorCoilEnabled(size_t coilIndex) const {
   return actuatorCoilEnabled_[coilIndex];
 }
 
+uint8_t EepromManager::getActuatorCoilConfirmAlarmIndex(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return 0;
+  }
+  return actuatorCoilConfirmAlarmIndex_[coilIndex];
+}
+
 void EepromManager::seedActuatorsFromDefaults() {
   actuatorDeviceIndex_ = kActuatorModbusDeviceIndex;
   for (size_t i = 0; i < kActuatorCoilCount; ++i) {
-    actuatorCoilOnAddresses_[i]  = kActuatorCoilOnAddresses[i];
-    actuatorCoilOnValues_[i]     = kActuatorCoilOnValues[i];
-    actuatorCoilOffAddresses_[i] = kActuatorCoilOffAddresses[i];
-    actuatorCoilOffValues_[i]    = kActuatorCoilOffValues[i];
-    actuatorCoilEnabled_[i]      = kActuatorConfirmationsEnabled[i];
+    actuatorCoilOnAddresses_[i]       = kActuatorCoilOnAddresses[i];
+    actuatorCoilOnValues_[i]          = kActuatorCoilOnValues[i];
+    actuatorCoilOffAddresses_[i]      = kActuatorCoilOffAddresses[i];
+    actuatorCoilOffValues_[i]         = kActuatorCoilOffValues[i];
+    actuatorCoilEnabled_[i]           = kActuatorConfirmationsEnabled[i];
+    actuatorCoilConfirmAlarmIndex_[i] = kActuatorConfirmAlarmIndex[i];
   }
 }
 
@@ -749,11 +757,12 @@ void EepromManager::loadActuators() {
 
   actuatorDeviceIndex_ = prefs_.getUChar(kKeyActDevIdx, (uint8_t)kActuatorModbusDeviceIndex);
   for (size_t i = 0; i < kActuatorCoilCount; ++i) {
-    actuatorCoilOnAddresses_[i]  = buf[i].onAddress;
-    actuatorCoilOnValues_[i]     = (buf[i].onValue != 0);
-    actuatorCoilOffAddresses_[i] = buf[i].offAddress;
-    actuatorCoilOffValues_[i]    = (buf[i].offValue != 0);
-    actuatorCoilEnabled_[i]      = (buf[i].enabled != 0);
+    actuatorCoilOnAddresses_[i]       = buf[i].onAddress;
+    actuatorCoilOnValues_[i]          = (buf[i].onValue != 0);
+    actuatorCoilOffAddresses_[i]      = buf[i].offAddress;
+    actuatorCoilOffValues_[i]         = (buf[i].offValue != 0);
+    actuatorCoilEnabled_[i]           = (buf[i].enabled != 0);
+    actuatorCoilConfirmAlarmIndex_[i] = buf[i].confirmAlarmIndex;
   }
   LOGI("EEPROM: Actuators loaded (deviceIndex=%u)\n", (unsigned)actuatorDeviceIndex_);
 }
@@ -766,11 +775,12 @@ bool EepromManager::saveActuators() {
 
   ActuatorCoilStored buf[kActuatorCoilCount];
   for (size_t i = 0; i < kActuatorCoilCount; ++i) {
-    buf[i].onAddress  = actuatorCoilOnAddresses_[i];
-    buf[i].onValue    = actuatorCoilOnValues_[i]  ? 1 : 0;
-    buf[i].offAddress = actuatorCoilOffAddresses_[i];
-    buf[i].offValue   = actuatorCoilOffValues_[i] ? 1 : 0;
-    buf[i].enabled    = actuatorCoilEnabled_[i]   ? 1 : 0;
+    buf[i].onAddress         = actuatorCoilOnAddresses_[i];
+    buf[i].onValue           = actuatorCoilOnValues_[i]  ? 1 : 0;
+    buf[i].offAddress        = actuatorCoilOffAddresses_[i];
+    buf[i].offValue          = actuatorCoilOffValues_[i] ? 1 : 0;
+    buf[i].enabled           = actuatorCoilEnabled_[i]   ? 1 : 0;
+    buf[i].confirmAlarmIndex = actuatorCoilConfirmAlarmIndex_[i];
   }
 
   prefs_.putUChar(kKeyActDevIdx, (uint8_t)actuatorDeviceIndex_);
@@ -786,18 +796,20 @@ bool EepromManager::saveActuators() {
 bool EepromManager::setActuatorConfig(size_t deviceIndex,
                                        const uint16_t* onAddresses, const bool* onValues,
                                        const uint16_t* offAddresses, const bool* offValues,
-                                       const bool* enabled) {
-  if (!onAddresses || !onValues || !offAddresses || !offValues || !enabled) {
+                                       const bool* enabled,
+                                       const uint8_t* confirmAlarmIndices) {
+  if (!onAddresses || !onValues || !offAddresses || !offValues || !enabled || !confirmAlarmIndices) {
     LOGE("EEPROM: Invalid actuator config\n");
     return false;
   }
   actuatorDeviceIndex_ = deviceIndex;
   for (size_t i = 0; i < kActuatorCoilCount; ++i) {
-    actuatorCoilOnAddresses_[i]  = onAddresses[i];
-    actuatorCoilOnValues_[i]     = onValues[i];
-    actuatorCoilOffAddresses_[i] = offAddresses[i];
-    actuatorCoilOffValues_[i]    = offValues[i];
-    actuatorCoilEnabled_[i]      = enabled[i];
+    actuatorCoilOnAddresses_[i]       = onAddresses[i];
+    actuatorCoilOnValues_[i]          = onValues[i];
+    actuatorCoilOffAddresses_[i]      = offAddresses[i];
+    actuatorCoilOffValues_[i]         = offValues[i];
+    actuatorCoilEnabled_[i]           = enabled[i];
+    actuatorCoilConfirmAlarmIndex_[i] = confirmAlarmIndices[i];
   }
   return saveActuators();
 }

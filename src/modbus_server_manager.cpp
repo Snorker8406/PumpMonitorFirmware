@@ -4,6 +4,8 @@
 #include "mqtt_manager.hpp"
 #include "network_manager.hpp"
 #include "eeprom_manager.hpp"
+#include "rtc_manager.hpp"
+#include "sd_manager.hpp"
 
 // El Logging.h interno de eModbus define macros LOG_LEVEL_ERROR/INFO/DEBUG que
 // chocan con el enum LogLevel de log.hpp. Incluimos log.hpp primero (para que el
@@ -128,6 +130,16 @@ void ModbusServerManager::begin() {
        serverUnitId, serverPort, serverMaxClient, kModbusServerRegCount);
 }
 
+// Significado de los registros con semántica definida (escritos por apps externas):
+//   reg[0] -> estados de los actuadores  ("status")
+//   reg[1] -> alarmas                    ("alarm")
+//   reg[2] -> notificaciones             ("notification")
+static constexpr uint16_t kTypedRegCount = 3;
+static constexpr const char *kTypedRegNames[kTypedRegCount] = {
+    "status", "alarm", "notification"};
+static constexpr const char *kTypedRegTopics[kTypedRegCount] = {
+    "actuatorStatus", "alarmEvent", "notificationEvent"};
+
 void ModbusServerManager::process() {
   if (!mutex_) return;
 
@@ -169,6 +181,29 @@ void ModbusServerManager::process() {
     if (!hasEvent) break;
 
     const char *fcName = (ev.functionCode == WRITE_HOLD_REGISTER) ? "FC06" : "FC16";
+
+    // Registros 0..2 tienen semántica propia: log descriptivo, topic MQTT
+    // dedicado y registro en el archivo diario de la SD.
+    if (ev.address < kTypedRegCount) {
+      const char *typeName = kTypedRegNames[ev.address];
+      LOGI("Modbus Server RX | %s | %s | reg[%u] = %u (0x%04X)\n",
+           fcName, typeName, ev.address, ev.value, ev.value);
+
+      // MQTT: payload "{registro},{valor}" en device/{MAC}_var/{topic}
+      char evTopic[64];
+      snprintf(evTopic, sizeof(evTopic), "device/%s_var/%s",
+               macNoColon, kTypedRegTopics[ev.address]);
+      char evPayload[16];
+      snprintf(evPayload, sizeof(evPayload), "%u,%u", ev.address, ev.value);
+      MqttManager::instance().publish(evTopic, evPayload);
+
+      // SD: {timestamp},{device},{eventType},{value} en el archivo diario
+      auto &rtc = RtcManager::instance();
+      unsigned long ts = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
+      SdManager::instance().writeServerEventRecord(ts, macNoColon, typeName, ev.value);
+      continue;  // No incluir en el lote genérico modbusDeviceEvent
+    }
+
     LOGI("Modbus Server RX | %s | reg[%u] = %u (0x%04X)\n",
          fcName, ev.address, ev.value, ev.value);
 

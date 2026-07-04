@@ -78,21 +78,22 @@ void buildModbusDevicesString(char* buffer, size_t bufferSize) {
 }
 
 // Construye el payload compacto de los actuadores (coils) en el buffer dado.
-// Formato: deviceIndex;coilIndex,modbusAddress,confirmationsEnabled;...
-// Ej: "1;0,0,1;1,1,1;2,2,0;3,3,1"
+// Formato: deviceIndex;coilIndex,onAddr,onVal,offAddr,offVal,enabled,confirmAlarmIdx;...
+// Ej: "1;0,0,1,0,0,1,0;1,1,1,1,0,1,1;2,2,1,2,0,0,2;3,3,1,3,0,1,3"
 void buildActuatorsString(char* buffer, size_t bufferSize) {
   auto &eeprom = EepromManager::instance();
   int n = snprintf(buffer, bufferSize, "%u", (unsigned)eeprom.getActuatorModbusDeviceIndex());
   size_t offset = (n > 0) ? (size_t)n : 0;
   for (size_t i = 0; i < kActuatorCoilCount && offset < bufferSize - 1; ++i) {
     int written = snprintf(buffer + offset, bufferSize - offset,
-                           ";%u,%u,%u,%u,%u,%u",
+                           ";%u,%u,%u,%u,%u,%u,%u",
                            (unsigned)i,
                            (unsigned)eeprom.getActuatorCoilOnAddress(i),
                            (unsigned)(eeprom.getActuatorCoilOnValue(i) ? 1 : 0),
                            (unsigned)eeprom.getActuatorCoilOffAddress(i),
                            (unsigned)(eeprom.getActuatorCoilOffValue(i) ? 1 : 0),
-                           (unsigned)(eeprom.getActuatorCoilEnabled(i) ? 1 : 0));
+                           (unsigned)(eeprom.getActuatorCoilEnabled(i) ? 1 : 0),
+                           (unsigned)eeprom.getActuatorCoilConfirmAlarmIndex(i));
     if (written > 0) offset += (size_t)written;
   }
 }
@@ -584,12 +585,14 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     uint16_t offAddresses[kActuatorCoilCount];
     bool     offValues[kActuatorCoilCount];
     bool     enabled[kActuatorCoilCount];
+    uint8_t  confirmAlarmIndices[kActuatorCoilCount];
     for (size_t i = 0; i < kActuatorCoilCount; ++i) {
-      onAddresses[i]  = eeprom.getActuatorCoilOnAddress(i);
-      onValues[i]     = eeprom.getActuatorCoilOnValue(i);
-      offAddresses[i] = eeprom.getActuatorCoilOffAddress(i);
-      offValues[i]    = eeprom.getActuatorCoilOffValue(i);
-      enabled[i]      = eeprom.getActuatorCoilEnabled(i);
+      onAddresses[i]          = eeprom.getActuatorCoilOnAddress(i);
+      onValues[i]             = eeprom.getActuatorCoilOnValue(i);
+      offAddresses[i]         = eeprom.getActuatorCoilOffAddress(i);
+      offValues[i]            = eeprom.getActuatorCoilOffValue(i);
+      enabled[i]              = eeprom.getActuatorCoilEnabled(i);
+      confirmAlarmIndices[i]  = eeprom.getActuatorCoilConfirmAlarmIndex(i);
     }
 
     bool parseOk = true;
@@ -615,15 +618,16 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     if (parseOk) {
       char* coilTok = strtok_r(nullptr, ";", &tokSave);
       while (coilTok != nullptr) {
-        char* fSave      = nullptr;
-        char* idxStr     = strtok_r(coilTok, ",", &fSave);
-        char* onAddrStr  = strtok_r(nullptr, ",", &fSave);
-        char* onValStr   = strtok_r(nullptr, ",", &fSave);
-        char* offAddrStr = strtok_r(nullptr, ",", &fSave);
-        char* offValStr  = strtok_r(nullptr, ",", &fSave);
-        char* enStr      = strtok_r(nullptr, ",", &fSave);
+        char* fSave         = nullptr;
+        char* idxStr        = strtok_r(coilTok, ",", &fSave);
+        char* onAddrStr     = strtok_r(nullptr, ",", &fSave);
+        char* onValStr      = strtok_r(nullptr, ",", &fSave);
+        char* offAddrStr    = strtok_r(nullptr, ",", &fSave);
+        char* offValStr     = strtok_r(nullptr, ",", &fSave);
+        char* enStr         = strtok_r(nullptr, ",", &fSave);
+        char* confAlmIdxStr = strtok_r(nullptr, ",", &fSave);
 
-        if (!idxStr || !onAddrStr || !onValStr || !offAddrStr || !offValStr || !enStr) {
+        if (!idxStr || !onAddrStr || !onValStr || !offAddrStr || !offValStr || !enStr || !confAlmIdxStr) {
           parseOk = false;
           break;
         }
@@ -635,18 +639,19 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
           break;
         }
 
-        onAddresses[ci]  = (uint16_t)atoi(onAddrStr);
-        onValues[ci]     = (atoi(onValStr) != 0);
-        offAddresses[ci] = (uint16_t)atoi(offAddrStr);
-        offValues[ci]    = (atoi(offValStr) != 0);
-        enabled[ci]      = (atoi(enStr) != 0);
+        onAddresses[ci]         = (uint16_t)atoi(onAddrStr);
+        onValues[ci]            = (atoi(onValStr) != 0);
+        offAddresses[ci]        = (uint16_t)atoi(offAddrStr);
+        offValues[ci]           = (atoi(offValStr) != 0);
+        enabled[ci]             = (atoi(enStr) != 0);
+        confirmAlarmIndices[ci] = (uint8_t)atoi(confAlmIdxStr);
 
         coilTok = strtok_r(nullptr, ";", &tokSave);
       }
     }
 
     if (parseOk) {
-      if (eeprom.setActuatorConfig(deviceIndex, onAddresses, onValues, offAddresses, offValues, enabled)) {
+      if (eeprom.setActuatorConfig(deviceIndex, onAddresses, onValues, offAddresses, offValues, enabled, confirmAlarmIndices)) {
         ActuatorManager::instance().reloadConfig();
         LOGI("MQTT: Actuators config saved (deviceIndex=%u)\n", (unsigned)deviceIndex);
       } else {

@@ -228,6 +228,31 @@ bool SdManager::writeAlarmRecord(unsigned long timestamp, uint8_t modbusModelId,
   return true;
 }
 
+bool SdManager::writeServerEventRecord(unsigned long timestamp, const char* device,
+                                       const char* eventType, uint16_t value) {
+  if (!initialized_) {
+    return false;
+  }
+
+  char filename[48];
+  generateFilename(filename, sizeof(filename));
+
+  File file = SD.open(filename, FILE_APPEND);
+  if (!file) {
+    LOGE("Failed to open file for server event writing\n");
+    return false;
+  }
+
+  // Formato: {timestamp},{device},{eventType},{value}
+  file.printf("%lu,%s,%s,%u\n", timestamp,
+              device ? device : "",
+              eventType ? eventType : "",
+              value);
+
+  file.close();
+  return true;
+}
+
 uint64_t SdManager::getTotalBytes() const {
   return initialized_ ? SD.totalBytes() : 0;
 }

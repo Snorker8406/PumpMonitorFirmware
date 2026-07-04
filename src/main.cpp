@@ -440,10 +440,23 @@ void instantValuesTask(void *) {
 // Task de control de actuadores: procesa escrituras de coils pendientes
 void actuatorTask(void *) {
   auto &net = NetworkManager::instance();
+  auto &mqtt = MqttManager::instance();
   auto &actuator = ActuatorManager::instance();
+
+  // Inicialización única: al arrancar/reiniciar, en cuanto existan las conexiones
+  // necesarias (ETH + MQTT), leer las alarmas y sincronizar el estado de cada
+  // actuador (switches 111/000 según su confirmAlarmIndex) publicando el estado
+  // real. Se reintenta hasta lograr una lectura de alarmas exitosa.
+  bool initDone = false;
 
   for (;;) {
     if (net.isConnected()) {
+      if (!initDone && mqtt.isConnected()) {
+        if (actuator.initializeFromAlarms()) {
+          initDone = true;
+          LOGI("ActuatorInit: actuadores inicializados desde el estado de alarmas\n");
+        }
+      }
       actuator.process();
     }
     vTaskDelay(pdMS_TO_TICKS(kActuatorTaskPeriodMs));

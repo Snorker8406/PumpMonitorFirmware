@@ -32,6 +32,12 @@ class SdManager {
   // Formato: {timestamp},{modbusModelId},{coilsTypes},{CoilsValues}
   bool writeAlarmRecord(unsigned long timestamp, uint8_t modbusModelId,
                         const char* coilsTypes, const std::vector<bool> &states);
+
+  // Guardar un evento recibido por el servidor Modbus en el archivo diario.
+  // eventType: "status" (actuadores), "alarm" o "notification".
+  // Formato: {timestamp},{device},{eventType},{value}
+  bool writeServerEventRecord(unsigned long timestamp, const char* device,
+                              const char* eventType, uint16_t value);
   
   // Logging de errores
   bool writeErrorLog(const char* level, const char* message);
