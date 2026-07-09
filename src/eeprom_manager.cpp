@@ -97,6 +97,17 @@ void EepromManager::begin() {
   LOGI("EEPROM: Modbus Server config | unitId=%u port=%u maxClients=%u timeout=%lu ms\n",
        getServerUnitId(), getServerPort(), getServerMaxClients(), getServerTimeoutMs());
 
+  // Configuración de red: si la EEPROM está vacía se usa DHCP (no se siembra nada)
+  if (getNetworkUseDhcp()) {
+    LOGI("EEPROM: Network config | DHCP\n");
+  } else {
+    LOGI("EEPROM: Network config | Static IP %s gw=%s sn=%s dns=%s\n",
+         getNetworkStaticIp().toString().c_str(),
+         getNetworkGateway().toString().c_str(),
+         getNetworkSubnet().toString().c_str(),
+         getNetworkDns().toString().c_str());
+  }
+
   // Verificar si existe Device ID en EEPROM
   int32_t currentDeviceID = prefs_.getInt(kKeyDeviceID, -1);
   
@@ -441,6 +452,81 @@ bool EepromManager::setServerTimeoutMs(uint32_t timeoutMs) {
     return false;
   }
   LOGI("EEPROM: Server Timeout updated: %lu ms\n", timeoutMs);
+  return true;
+}
+
+bool EepromManager::getNetworkUseDhcp() {
+  // DHCP por defecto: si no está inicializado, no existe el flag o no hay IP
+  // guardada, se usa DHCP independientemente del valor del flag.
+  if (!initialized_ || !prefs_.isKey(kKeyNetDhcp) || !prefs_.isKey(kKeyNetIp)) {
+    return true;
+  }
+  return prefs_.getUChar(kKeyNetDhcp, 1) != 0;
+}
+
+bool EepromManager::setNetworkUseDhcp(bool useDhcp) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Network DHCP flag\n");
+    return false;
+  }
+  if (prefs_.putUChar(kKeyNetDhcp, useDhcp ? 1 : 0) == 0) {
+    LOGE("EEPROM: Failed to write Network DHCP flag\n");
+    return false;
+  }
+  LOGI("EEPROM: Network DHCP flag updated: %s\n", useDhcp ? "DHCP" : "Static");
+  return true;
+}
+
+IPAddress EepromManager::getNetworkStaticIp() {
+  if (!initialized_) {
+    return kStaticIp;
+  }
+  return IPAddress(prefs_.getUInt(kKeyNetIp, (uint32_t)kStaticIp));
+}
+
+IPAddress EepromManager::getNetworkGateway() {
+  if (!initialized_) {
+    return kStaticGateway;
+  }
+  return IPAddress(prefs_.getUInt(kKeyNetGw, (uint32_t)kStaticGateway));
+}
+
+IPAddress EepromManager::getNetworkSubnet() {
+  if (!initialized_) {
+    return kStaticSubnet;
+  }
+  return IPAddress(prefs_.getUInt(kKeyNetSn, (uint32_t)kStaticSubnet));
+}
+
+IPAddress EepromManager::getNetworkDns() {
+  if (!initialized_) {
+    return kStaticDns;
+  }
+  return IPAddress(prefs_.getUInt(kKeyNetDns, (uint32_t)kStaticDns));
+}
+
+bool EepromManager::setNetworkStaticConfig(const IPAddress& ip, const IPAddress& gateway,
+                                           const IPAddress& subnet, const IPAddress& dns) {
+  if (!initialized_) {
+    LOGE("EEPROM: Not initialized, cannot set Network Static Config\n");
+    return false;
+  }
+  if ((uint32_t)ip == 0) {
+    LOGE("EEPROM: Invalid static IP (0.0.0.0)\n");
+    return false;
+  }
+  bool ok = true;
+  ok &= prefs_.putUInt(kKeyNetIp, (uint32_t)ip) != 0;
+  ok &= prefs_.putUInt(kKeyNetGw, (uint32_t)gateway) != 0;
+  ok &= prefs_.putUInt(kKeyNetSn, (uint32_t)subnet) != 0;
+  ok &= prefs_.putUInt(kKeyNetDns, (uint32_t)dns) != 0;
+  if (!ok) {
+    LOGE("EEPROM: Failed to write Network Static Config\n");
+    return false;
+  }
+  LOGI("EEPROM: Network Static Config updated: ip=%s gw=%s sn=%s dns=%s\n",
+       ip.toString().c_str(), gateway.toString().c_str(),
+       subnet.toString().c_str(), dns.toString().c_str());
   return true;
 }
 

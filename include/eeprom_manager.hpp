@@ -50,6 +50,18 @@ class EepromManager {
   uint32_t getServerTimeoutMs();
   bool     setServerTimeoutMs(uint32_t timeoutMs);
   
+  // ── Configuración de red (IP fija / DHCP) ──
+  // Si la EEPROM está vacía (sin flag o sin IP guardada) se usa DHCP,
+  // independientemente del valor del flag. Los cambios se aplican al reiniciar.
+  bool getNetworkUseDhcp();
+  bool setNetworkUseDhcp(bool useDhcp);
+  IPAddress getNetworkStaticIp();
+  IPAddress getNetworkGateway();
+  IPAddress getNetworkSubnet();
+  IPAddress getNetworkDns();
+  bool setNetworkStaticConfig(const IPAddress& ip, const IPAddress& gateway,
+                              const IPAddress& subnet, const IPAddress& dns);
+
   // Device ID
   int32_t getDeviceID();
   bool setDeviceID(int32_t id);
@@ -171,6 +183,11 @@ class EepromManager {
   static constexpr const char* kKeyMbSrvPort = "mbSrvPort";
   static constexpr const char* kKeyMbSrvMaxCli = "mbSrvMaxCli";
   static constexpr const char* kKeyMbSrvTout = "mbSrvTout";
+  static constexpr const char* kKeyNetDhcp = "netDhcp";
+  static constexpr const char* kKeyNetIp = "netIp";
+  static constexpr const char* kKeyNetGw = "netGw";
+  static constexpr const char* kKeyNetSn = "netSn";
+  static constexpr const char* kKeyNetDns = "netDns";
   static constexpr const char* kDefaultUrl = "https://pumpmonitor.agrotecsa.com.mx/";
   static constexpr uint16_t kDefaultRTInterval = 3;
   static constexpr uint16_t kDefaultIVInterval = 60;  // 1 minuto por defecto

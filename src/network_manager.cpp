@@ -1,5 +1,6 @@
 #include "network_manager.hpp"
 
+#include "eeprom_manager.hpp"
 #include "log.hpp"
 
 namespace {
@@ -24,13 +25,31 @@ NetworkManager &NetworkManager::instance() {
 bool NetworkManager::begin(uint32_t timeoutMs) {
   WiFi.onEvent(NetworkManager::handleEvent);
 
-  if (kUseStaticIp) {
-    ETH.config(kStaticIp, kStaticGateway, kStaticSubnet, kStaticDns);
-  }
-
   if (!ETH.begin(kEthAddr, kEthPowerPin, kEthMdcPin, kEthMdioPin, kEthPhy, kEthClockMode)) {
     LOGE("ETH.begin() failed - check hardware configuration\n");
     return false;
+  }
+
+  // Configuración de red desde EEPROM: DHCP por defecto (EEPROM vacía),
+  // IP fija solo si el flag y la IP están guardados.
+  // ETH.config() debe llamarse DESPUÉS de ETH.begin(): antes la interfaz de
+  // red no existe y el stop del cliente DHCP falla ("dhcp client stop called
+  // with NULL api"), dejando activo el DHCP.
+  auto &eeprom = EepromManager::instance();
+  if (!eeprom.getNetworkUseDhcp()) {
+    IPAddress ip = eeprom.getNetworkStaticIp();
+    IPAddress gateway = eeprom.getNetworkGateway();
+    IPAddress subnet = eeprom.getNetworkSubnet();
+    IPAddress dns = eeprom.getNetworkDns();
+    if (ETH.config(ip, gateway, subnet, dns)) {
+      LOGI("ETH static IP config: %s gw=%s sn=%s dns=%s\n",
+           ip.toString().c_str(), gateway.toString().c_str(),
+           subnet.toString().c_str(), dns.toString().c_str());
+    } else {
+      LOGE("ETH static IP config failed, falling back to DHCP\n");
+    }
+  } else {
+    LOGI("ETH using DHCP\n");
   }
 
   const uint32_t start = millis();

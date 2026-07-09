@@ -251,6 +251,95 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to publish serverConfig\n");
     }
   }
+  // Procesar saveNetworkConfig: configurar red (DHCP o IP fija)
+  // Payload: "1"                              -> DHCP
+  //          "0,ip[,gateway[,subnet[,dns]]]"  -> IP fija
+  //   Ej: "0,192.168.1.120,192.168.1.254,255.255.255.0,8.8.8.8"
+  // Los campos omitidos conservan el valor guardado (o el default).
+  // Se persiste en EEPROM y el ESP se reinicia para aplicar los cambios.
+  else if (strstr(topic, "/saveNetworkConfig") != nullptr) {
+    unsigned int dhcpFlag;
+    char ipStr[16] = {0}, gwStr[16] = {0}, snStr[16] = {0}, dnsStr[16] = {0};
+    int parsed = sscanf(msg, "%u,%15[0-9.],%15[0-9.],%15[0-9.],%15[0-9.]",
+                        &dhcpFlag, ipStr, gwStr, snStr, dnsStr);
+    if (parsed < 1 || dhcpFlag > 1) {
+      LOGE("MQTT: Invalid networkConfig format. Expected: 1 (DHCP) or 0,ip[,gateway[,subnet[,dns]]]\n");
+      return;
+    }
+    if (dhcpFlag == 1) {
+      if (eeprom.setNetworkUseDhcp(true)) {
+        LOGI("MQTT: Network config updated (DHCP). Restarting ESP to apply...\n");
+        delay(500);
+        ESP.restart();
+      } else {
+        LOGE("MQTT: Failed to update network config\n");
+      }
+      return;
+    }
+    // IP fija: se requiere al menos la IP
+    if (parsed < 2) {
+      LOGE("MQTT: Static network config requires an IP. Expected: 0,ip[,gateway[,subnet[,dns]]]\n");
+      return;
+    }
+    IPAddress ip, gateway = eeprom.getNetworkGateway();
+    IPAddress subnet = eeprom.getNetworkSubnet(), dns = eeprom.getNetworkDns();
+    if (!ip.fromString(ipStr)) {
+      LOGE("MQTT: Invalid static IP: %s\n", ipStr);
+      return;
+    }
+    if (parsed >= 3 && !gateway.fromString(gwStr)) {
+      LOGE("MQTT: Invalid gateway: %s\n", gwStr);
+      return;
+    }
+    if (parsed >= 4 && !subnet.fromString(snStr)) {
+      LOGE("MQTT: Invalid subnet: %s\n", snStr);
+      return;
+    }
+    if (parsed >= 5 && !dns.fromString(dnsStr)) {
+      LOGE("MQTT: Invalid DNS: %s\n", dnsStr);
+      return;
+    }
+    bool ok = eeprom.setNetworkStaticConfig(ip, gateway, subnet, dns);
+    ok &= eeprom.setNetworkUseDhcp(false);
+    if (ok) {
+      LOGI("MQTT: Network config updated (Static %s). Restarting ESP to apply...\n",
+           ip.toString().c_str());
+      delay(500);
+      ESP.restart();
+    } else {
+      LOGE("MQTT: Failed to update network config\n");
+    }
+  }
+  // Procesar getNetworkConfig: devolver la configuración de red actual
+  // Response topic: device/{MAC}_var/networkConfig
+  // Payload: useDhcp,ip,gateway,subnet,dns,currentIp
+  else if (strstr(topic, "/getNetworkConfig") != nullptr) {
+    const char *macColoned = NetworkManager::instance().macString();
+    char macNoColon[13] = {0};
+    int idx = 0;
+    for (const char *p = macColoned; *p && idx < 12; ++p) {
+      if (*p != ':') macNoColon[idx++] = *p;
+    }
+
+    char netBuf[96];
+    snprintf(netBuf, sizeof(netBuf), "%u,%s,%s,%s,%s,%s",
+             eeprom.getNetworkUseDhcp() ? 1 : 0,
+             eeprom.getNetworkStaticIp().toString().c_str(),
+             eeprom.getNetworkGateway().toString().c_str(),
+             eeprom.getNetworkSubnet().toString().c_str(),
+             eeprom.getNetworkDns().toString().c_str(),
+             NetworkManager::instance().localIP().toString().c_str());
+
+    char responseTopic[64];
+    snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/networkConfig", macNoColon);
+
+    auto &mqtt = MqttManager::instance();
+    if (mqtt.publish(responseTopic, netBuf)) {
+      LOGI("MQTT: Published networkConfig (%s)\n", netBuf);
+    } else {
+      LOGE("MQTT: Failed to publish networkConfig\n");
+    }
+  }
   // Procesar startRealTime: activar modo Real Time por X segundos
   else if (strstr(topic, "/startRealTime") != nullptr) {
     uint32_t durationSeconds = atoi(msg);
