@@ -9,8 +9,8 @@
 
 struct SensorDataRecord {
   unsigned long timestamp;
-  uint8_t modbusModelId;          // ID numérico del modelo Modbus
-  const char* modbusModelName;    // Nombre descriptivo del modelo Modbus
+  uint8_t modbusSlaveId;          // ID numérico del esclavo Modbus
+  const char* modbusSlaveName;    // Nombre descriptivo del esclavo Modbus
   IPAddress deviceIp;
   std::vector<float> values;
   std::vector<uint16_t> rawData;  // Datos hexadecimales crudos
@@ -29,8 +29,8 @@ class SdManager {
   bool writeDataBatch(const std::vector<SensorDataRecord> &records);
 
   // Guardar un registro de alarmas (coils) en el archivo diario.
-  // Formato: {timestamp},{modbusModelId},{coilsTypes},{CoilsValues}
-  bool writeAlarmRecord(unsigned long timestamp, uint8_t modbusModelId,
+  // Formato: {timestamp},{modbusSlaveId},{coilsTypes},{CoilsValues}
+  bool writeAlarmRecord(unsigned long timestamp, uint8_t modbusSlaveId,
                         const char* coilsTypes, const std::vector<bool> &states);
 
   // Guardar un evento recibido por el servidor Modbus en el archivo diario.

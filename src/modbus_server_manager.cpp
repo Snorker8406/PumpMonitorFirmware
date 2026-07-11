@@ -156,8 +156,8 @@ void ModbusServerManager::process() {
   auto &rtc = RtcManager::instance();
   auto &eeprom = EepromManager::instance();
   const int32_t deviceId = eeprom.getDeviceID();
-  // Modelo Modbus del device de alarmas (mismo criterio que la publicación de alarmas)
-  const uint8_t modbusModelId = eeprom.getModbusDevice(eeprom.getAlarmDeviceIndex()).modbusModelId;
+  // SlaveId Modbus del device de alarmas (mismo criterio que la publicación de alarmas)
+  const uint8_t modbusSlaveId = eeprom.getModbusDevice(eeprom.getAlarmDeviceIndex()).modbusSlaveId;
 
   const char *macColoned = NetworkManager::instance().macString();
   char macNoColon[13] = {0};
@@ -197,13 +197,13 @@ void ModbusServerManager::process() {
 
       unsigned long ts = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
 
-      // MQTT: payload "{timestamp},{deviceId},{modbusModelId},{registro},{valor}" en device/{MAC}_var/{topic}
+      // MQTT: payload "{timestamp},{deviceId},{modbusSlaveId},{registro},{valor}" en device/{MAC}_var/{topic}
       char evTopic[64];
       snprintf(evTopic, sizeof(evTopic), "device/%s_var/%s",
                macNoColon, kTypedRegTopics[ev.address]);
       char evPayload[56];
       snprintf(evPayload, sizeof(evPayload), "%lu,%ld,%u,%u,%u",
-               ts, (long)deviceId, modbusModelId, ev.address, ev.value);
+               ts, (long)deviceId, modbusSlaveId, ev.address, ev.value);
       MqttManager::instance().publish(evTopic, evPayload);
 
       // SD: {timestamp},{device},{eventType},{value} en el archivo diario

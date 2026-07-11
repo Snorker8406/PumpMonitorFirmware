@@ -118,8 +118,8 @@ class EepromManager {
     uint16_t totalRegs;
     uint8_t regType;     // ModbusRegisterType
     uint8_t swapWords;   // bool
-    uint8_t modbusModelId;
-    char modbusModelName[kModbusModelNameLen];
+    uint8_t modbusSlaveId;
+    char modbusSlaveName[kModbusSlaveNameLen];
   };
 
   // Carga la lista desde EEPROM (o siembra con defaults si está vacía).
@@ -150,9 +150,9 @@ class EepromManager {
   bool initialized_ = false;
 
   // Lista activa en RAM. Los nombres se guardan en un buffer estable para que
-  // ModbusDeviceConfig::modbusModelName apunte a memoria válida.
+  // ModbusDeviceConfig::modbusSlaveName apunte a memoria válida.
   ModbusDeviceConfig modbusDevices_[kMaxModbusDevices]{};
-  char modbusModelNames_[kMaxModbusDevices][kModbusModelNameLen]{};
+  char modbusSlaveNames_[kMaxModbusDevices][kModbusSlaveNameLen]{};
   size_t modbusDeviceCount_ = 0;
 
   // Configuración activa de actuadores en RAM.

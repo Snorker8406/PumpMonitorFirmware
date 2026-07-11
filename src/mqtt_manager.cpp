@@ -55,7 +55,7 @@ void buildAllVariablesJson(char* buffer, size_t bufferSize, const char* macNoCol
 }
 
 // Construye el payload compacto de dispositivos Modbus en el buffer dado.
-// Formato: ip,unitId,startReg,totalRegs,regType,swapWords,modelId,modelName;...
+// Formato: ip,unitId,startReg,totalRegs,regType,swapWords,slaveId,slaveName;...
 // regType: 0=HOLDING_REGISTER, 1=INPUT_REGISTER
 void buildModbusDevicesString(char* buffer, size_t bufferSize) {
   auto &eeprom = EepromManager::instance();
@@ -71,8 +71,8 @@ void buildModbusDevicesString(char* buffer, size_t bufferSize) {
                            d.ip[0], d.ip[1], d.ip[2], d.ip[3],
                            d.unitId, d.startReg, d.totalRegs,
                            rt, (unsigned)(d.swapWords ? 1 : 0),
-                           d.modbusModelId,
-                           d.modbusModelName ? d.modbusModelName : "");
+                           d.modbusSlaveId,
+                           d.modbusSlaveName ? d.modbusSlaveName : "");
     if (written > 0) offset += (size_t)written;
   }
 }
@@ -491,7 +491,7 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
   // Procesar saveModbusDevices: reemplazar TODA la lista de dispositivos Modbus
   // en EEPROM y en el array en ejecución.
   // Payload compacto: dispositivos separados por ';', campos por ',':
-  //   ip,unitId,startReg,totalRegs,regType,swapWords,modelId,modelName
+  //   ip,unitId,startReg,totalRegs,regType,swapWords,slaveId,slaveName
   //   regType: 0 o 3 = HOLDING_REGISTER (FC03) ; 1 o 4 = INPUT_REGISTER (FC04)
   //   swapWords: 0/1
   // Ej: "192.168.1.200,1,0,100,1,0,1,Device_1;192.168.1.101,1,0,8,0,1,3,Device_2"
@@ -503,7 +503,7 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     buf[blen] = '\0';
 
     ModbusDeviceConfig devs[kMaxModbusDevices];
-    char names[kMaxModbusDevices][kModbusModelNameLen];
+    char names[kMaxModbusDevices][kModbusSlaveNameLen];
     size_t count = 0;
     bool parseOk = true;
 
@@ -553,10 +553,10 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       devs[count].totalRegs = (uint16_t)atoi(totStr);
       devs[count].regType = regType;
       devs[count].swapWords = (atoi(swStr) != 0);
-      devs[count].modbusModelId = (uint8_t)atoi(midStr);
-      strncpy(names[count], nameStr, kModbusModelNameLen - 1);
-      names[count][kModbusModelNameLen - 1] = '\0';
-      devs[count].modbusModelName = names[count];
+      devs[count].modbusSlaveId = (uint8_t)atoi(midStr);
+      strncpy(names[count], nameStr, kModbusSlaveNameLen - 1);
+      names[count][kModbusSlaveNameLen - 1] = '\0';
+      devs[count].modbusSlaveName = names[count];
 
       count++;
       devTok = strtok_r(nullptr, ";", &devSave);

@@ -76,7 +76,7 @@ bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, s
   if (err != SUCCESS) {
     ModbusError me(err);
     LOGE("Modbus[%u] %s (%u.%u.%u.%u): error %02X - %s\n",
-         deviceIndex, config.modbusModelName,
+         deviceIndex, config.modbusSlaveName,
          config.ip[0], config.ip[1], config.ip[2], config.ip[3],
          (int)err, (const char *)me);
     xSemaphoreGive(mutex_);
@@ -116,7 +116,7 @@ bool ModbusManager::readDevice(size_t deviceIndex, std::vector<float> &values, s
   }
 
   LOGD("Modbus[%u] read %u regs, %u floats from %s\n",
-       deviceIndex, allRegs.size(), values.size(), config.modbusModelName);
+       deviceIndex, allRegs.size(), values.size(), config.modbusSlaveName);
 
   return true;
 }
@@ -130,14 +130,14 @@ bool ModbusManager::readAllDevices(std::vector<ModbusDeviceData> &devicesData) {
   for (size_t i = 0; i < deviceCount; i++) {
     const auto &config = EepromManager::instance().getModbusDevice(i);
     ModbusDeviceData data;
-    data.modbusModelId = config.modbusModelId;
-    data.modbusModelName = config.modbusModelName;
+    data.modbusSlaveId = config.modbusSlaveId;
+    data.modbusSlaveName = config.modbusSlaveName;
     data.ip = config.ip;
     data.success = readDevice(i, data.values, &data.rawData);
 
     if (!data.success) {
       allSuccess = false;
-      LOGE("Failed to read %s (%u.%u.%u.%u)\n", config.modbusModelName,
+      LOGE("Failed to read %s (%u.%u.%u.%u)\n", config.modbusSlaveName,
            config.ip[0], config.ip[1], config.ip[2], config.ip[3]);
     }
 
@@ -206,7 +206,7 @@ bool ModbusManager::readBooleans(size_t deviceIndex, uint16_t startAddress, uint
   if (err != SUCCESS) {
     ModbusError me(err);
     LOGE("readBooleans[%u] %s addr=%u count=%u: error %02X - %s\n",
-         deviceIndex, config.modbusModelName, startAddress, count,
+         deviceIndex, config.modbusSlaveName, startAddress, count,
          (int)err, (const char *)me);
     xSemaphoreGive(mutex_);
     return false;
@@ -233,7 +233,7 @@ bool ModbusManager::readBooleans(size_t deviceIndex, uint16_t startAddress, uint
 
   LOGD("readBooleans[%u] read %u bits (%s) from %s\n",
        deviceIndex, states.size(),
-       discreteInputs ? "discrete inputs" : "coils", config.modbusModelName);
+       discreteInputs ? "discrete inputs" : "coils", config.modbusSlaveName);
 
   return true;
 }
@@ -278,13 +278,13 @@ bool ModbusManager::writeRegister(size_t deviceIndex, uint16_t address, const ch
   if (err != SUCCESS) {
     ModbusError me(err);
     LOGE("writeRegister[%u] %s addr=%u val=%s: error %02X - %s\n",
-         deviceIndex, config.modbusModelName, address, value,
+         deviceIndex, config.modbusSlaveName, address, value,
          (int)err, (const char *)me);
     return false;
   }
 
   LOGI("writeRegister[%u] %s addr=%u val=%s OK\n",
-       deviceIndex, config.modbusModelName, address, value);
+       deviceIndex, config.modbusSlaveName, address, value);
   return true;
 }
 
@@ -334,12 +334,12 @@ bool ModbusManager::writeCoil(size_t deviceIndex, uint16_t address, const char* 
   if (err != SUCCESS) {
     ModbusError me(err);
     LOGE("writeCoil[%u] %s addr=%u val=%s: error %02X - %s\n",
-         deviceIndex, config.modbusModelName, address, value,
+         deviceIndex, config.modbusSlaveName, address, value,
          (int)err, (const char *)me);
     return false;
   }
 
   LOGI("writeCoil[%u] %s addr=%u val=%s (0x%04X) OK\n",
-       deviceIndex, config.modbusModelName, address, value, coilValue);
+       deviceIndex, config.modbusSlaveName, address, value, coilValue);
   return true;
 }

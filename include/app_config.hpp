@@ -69,20 +69,20 @@ struct ModbusDeviceConfig {
   uint16_t totalRegs;       // Debe ser par (2 regs por float)
   ModbusRegisterType regType;
   bool swapWords;               // true = Little-Endian words (CD AB), false = Big-Endian words (AB CD)
-  uint8_t modbusModelId;        // ID numérico del modelo Modbus
-  const char* modbusModelName;  // Nombre descriptivo del modelo Modbus
+  uint8_t modbusSlaveId;        // ID numérico del esclavo Modbus
+  const char* modbusSlaveName;  // Nombre descriptivo del esclavo Modbus
 };
 
 // Límites para el almacenamiento configurable en EEPROM
 constexpr size_t kMaxModbusDevices = 8;          // Máximo de dispositivos almacenables en EEPROM
-constexpr size_t kModbusModelNameLen = 24;       // Longitud máxima del nombre de modelo (incl. '\0')
+constexpr size_t kModbusSlaveNameLen = 24;       // Longitud máxima del nombre del esclavo (incl. '\0')
 
 // Valores por defecto (semilla). Se escriben en EEPROM la primera vez que arranca
 // el dispositivo o cuando la EEPROM está vacía. En tiempo de ejecución la lista
 // activa se lee desde EEPROM mediante EepromManager (configurable, no hardcoded).
 static const ModbusDeviceConfig kDefaultModbusDevices[] = {
   {IPAddress(192, 168, 1, 200), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, false, 1, "Device_1"},
-  //                ip               unitId  startReg  totalRegs  regType                          swapWords  deviceModbusModelId  modelName
+  //                ip               unitId  startReg  totalRegs  regType                          swapWords  modbusSlaveId  slaveName
   {IPAddress(192, 168, 1, 101),      1,      0,        8,         ModbusRegisterType::HOLDING_REGISTER, true,  2,       "Device_2"},
 };
 constexpr size_t kDefaultModbusDeviceCount = sizeof(kDefaultModbusDevices) / sizeof(kDefaultModbusDevices[0]);
@@ -90,7 +90,7 @@ constexpr size_t kDefaultModbusDeviceCount = sizeof(kDefaultModbusDevices) / siz
 // ── Lista hardcoded original (DESACTIVADA: ahora la lista se lee desde EEPROM) ──
 // static const ModbusDeviceConfig kModbusDevices[] = {
 //   {IPAddress(192, 168, 1, 200), 1, 0, 100, ModbusRegisterType::INPUT_REGISTER, false, 1, "Device_1"},
-//   //                ip               unitId  startReg  totalRegs  regType                          swapWords  deviceModbusModelId  modelName
+//   //                ip               unitId  startReg  totalRegs  regType                          swapWords  modbusSlaveId  slaveName
 //   {IPAddress(192, 168, 1, 101),      1,      0,        8,         ModbusRegisterType::HOLDING_REGISTER, true,  2,       "Device_2"},
 //   // Ejemplo con más registros: {IPAddress(192, 168, 1, 12), 1, 0, 120, ModbusRegisterType::HOLDING_REGISTER, 3, "Device_3"},
 // };

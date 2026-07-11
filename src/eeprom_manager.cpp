@@ -644,9 +644,9 @@ void EepromManager::seedModbusDevicesFromDefaults() {
   for (size_t i = 0; i < modbusDeviceCount_; ++i) {
     modbusDevices_[i] = kDefaultModbusDevices[i];
     // Copiar el nombre a un buffer estable y apuntar a él
-    strncpy(modbusModelNames_[i], kDefaultModbusDevices[i].modbusModelName, kModbusModelNameLen - 1);
-    modbusModelNames_[i][kModbusModelNameLen - 1] = '\0';
-    modbusDevices_[i].modbusModelName = modbusModelNames_[i];
+    strncpy(modbusSlaveNames_[i], kDefaultModbusDevices[i].modbusSlaveName, kModbusSlaveNameLen - 1);
+    modbusSlaveNames_[i][kModbusSlaveNameLen - 1] = '\0';
+    modbusDevices_[i].modbusSlaveName = modbusSlaveNames_[i];
   }
 }
 
@@ -686,10 +686,10 @@ void EepromManager::loadModbusDevices() {
     modbusDevices_[i].totalRegs = s.totalRegs;
     modbusDevices_[i].regType = static_cast<ModbusRegisterType>(s.regType);
     modbusDevices_[i].swapWords = (s.swapWords != 0);
-    modbusDevices_[i].modbusModelId = s.modbusModelId;
-    strncpy(modbusModelNames_[i], s.modbusModelName, kModbusModelNameLen - 1);
-    modbusModelNames_[i][kModbusModelNameLen - 1] = '\0';
-    modbusDevices_[i].modbusModelName = modbusModelNames_[i];
+    modbusDevices_[i].modbusSlaveId = s.modbusSlaveId;
+    strncpy(modbusSlaveNames_[i], s.modbusSlaveName, kModbusSlaveNameLen - 1);
+    modbusSlaveNames_[i][kModbusSlaveNameLen - 1] = '\0';
+    modbusDevices_[i].modbusSlaveName = modbusSlaveNames_[i];
   }
   LOGI("EEPROM: Modbus devices loaded (%u)\n", (unsigned)modbusDeviceCount_);
 }
@@ -712,9 +712,9 @@ bool EepromManager::saveModbusDevices() {
     buf[i].totalRegs = d.totalRegs;
     buf[i].regType = static_cast<uint8_t>(d.regType);
     buf[i].swapWords = d.swapWords ? 1 : 0;
-    buf[i].modbusModelId = d.modbusModelId;
-    strncpy(buf[i].modbusModelName, d.modbusModelName ? d.modbusModelName : "", kModbusModelNameLen - 1);
-    buf[i].modbusModelName[kModbusModelNameLen - 1] = '\0';
+    buf[i].modbusSlaveId = d.modbusSlaveId;
+    strncpy(buf[i].modbusSlaveName, d.modbusSlaveName ? d.modbusSlaveName : "", kModbusSlaveNameLen - 1);
+    buf[i].modbusSlaveName[kModbusSlaveNameLen - 1] = '\0';
   }
 
   prefs_.putUChar(kKeyModbusCount, static_cast<uint8_t>(modbusDeviceCount_));
@@ -740,9 +740,9 @@ bool EepromManager::setModbusDevices(const ModbusDeviceConfig* devices, size_t c
   modbusDeviceCount_ = count;
   for (size_t i = 0; i < count; ++i) {
     modbusDevices_[i] = devices[i];
-    strncpy(modbusModelNames_[i], devices[i].modbusModelName ? devices[i].modbusModelName : "", kModbusModelNameLen - 1);
-    modbusModelNames_[i][kModbusModelNameLen - 1] = '\0';
-    modbusDevices_[i].modbusModelName = modbusModelNames_[i];
+    strncpy(modbusSlaveNames_[i], devices[i].modbusSlaveName ? devices[i].modbusSlaveName : "", kModbusSlaveNameLen - 1);
+    modbusSlaveNames_[i][kModbusSlaveNameLen - 1] = '\0';
+    modbusDevices_[i].modbusSlaveName = modbusSlaveNames_[i];
   }
   return saveModbusDevices();
 }

@@ -6,8 +6,8 @@
 #include "app_config.hpp"
 
 struct ModbusDeviceData {
-  uint8_t modbusModelId;          // ID numérico del modelo Modbus
-  const char* modbusModelName;    // Nombre descriptivo del modelo Modbus
+  uint8_t modbusSlaveId;          // ID numérico del esclavo Modbus
+  const char* modbusSlaveName;    // Nombre descriptivo del esclavo Modbus
   IPAddress ip;
   std::vector<float> values;
   std::vector<uint16_t> rawData;  // Datos crudos en hexadecimal

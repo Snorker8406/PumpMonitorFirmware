@@ -172,9 +172,9 @@ void realTimeModbusTask(void *) {
       if (readSuccess) {
         for (const auto &device : devicesData) {
           if (device.success && !device.rawData.empty()) {
-            // Construir mensaje: modbusModelId,HEXDATA
+            // Construir mensaje: modbusSlaveId,HEXDATA
             char msgBuffer[512];
-            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%u,", device.modbusModelId);
+            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%u,", device.modbusSlaveId);
             
             // Agregar datos hexadecimales
             for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
@@ -183,17 +183,17 @@ void realTimeModbusTask(void *) {
             
             // Log de diagnóstico
             size_t msgLen = strlen(msgBuffer);
-            LOGI("RT: %s message size: %u bytes (%u regs)\n", device.modbusModelName, msgLen, device.rawData.size());
+            LOGI("RT: %s message size: %u bytes (%u regs)\n", device.modbusSlaveName, msgLen, device.rawData.size());
             
             // Publicar
             if (mqtt.publish(realTimeTopic, msgBuffer)) {
               // Imprimir valores float reales leídos
-              LOGI("RT [%s]: ", device.modbusModelName);
+              LOGI("RT [%s]: ", device.modbusSlaveName);
               for (size_t j = 0; j < device.values.size(); j++) {
                 Serial.printf("%.2f%s", device.values[j], (j < device.values.size() - 1) ? ", " : "\n");
               }
             } else {
-              LOGE("RT: Failed to publish %s (size: %u bytes)\n", device.modbusModelName, msgLen);
+              LOGE("RT: Failed to publish %s (size: %u bytes)\n", device.modbusSlaveName, msgLen);
             }
             
             // Esperar entre dispositivos
@@ -217,16 +217,16 @@ void realTimeModbusTask(void *) {
 
           std::vector<bool> almStates;
           if (modbus.readBooleans(almDeviceIndex, almStartAddress, almCount, almStates, almDiscrete)) {
-            uint8_t almModelId = eeprom.getModbusDevice(almDeviceIndex).modbusModelId;
+            uint8_t almSlaveId = eeprom.getModbusDevice(almDeviceIndex).modbusSlaveId;
 
             // Topic device/{MAC}_var/alarms
             char alarmsTopic[48];
             snprintf(alarmsTopic, sizeof(alarmsTopic), "device/%s_var/alarms", macNoColon);
 
-            // Publicación: {deviceId},{modbusModelId},{coilsTypes},{rawData}
+            // Publicación: {deviceId},{modbusSlaveId},{coilsTypes},{rawData}
             char almPayload[128];
             int almOffset = snprintf(almPayload, sizeof(almPayload), "%d,%u,%s,",
-                                     deviceId, almModelId, almCoilsTypes.c_str());
+                                     deviceId, almSlaveId, almCoilsTypes.c_str());
             for (size_t i = 0; i < almStates.size() && almOffset < (int)sizeof(almPayload) - 2; i++) {
               almPayload[almOffset++] = almStates[i] ? '1' : '0';
             }
@@ -335,9 +335,9 @@ void instantValuesTask(void *) {
         
         for (const auto &device : devicesData) {
           if (device.success && !device.rawData.empty()) {
-            // Construir mensaje: {deviceId},{modbusModelId},{rawData}
+            // Construir mensaje: {deviceId},{modbusSlaveId},{rawData}
             char msgBuffer[512];
-            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%d,%u,", deviceId, device.modbusModelId);
+            int offset = snprintf(msgBuffer, sizeof(msgBuffer), "%d,%u,", deviceId, device.modbusSlaveId);
             
             // Agregar datos hexadecimales
             for (size_t i = 0; i < device.rawData.size() && offset < (int)sizeof(msgBuffer) - 5; i++) {
@@ -346,16 +346,16 @@ void instantValuesTask(void *) {
             
             // Publicar por MQTT
             if (mqtt.publish(instValTopic, msgBuffer)) {
-              LOGD("IV: Published %s\n", device.modbusModelName);
+              LOGD("IV: Published %s\n", device.modbusSlaveName);
             } else {
-              LOGE("IV: Failed to publish %s\n", device.modbusModelName);
+              LOGE("IV: Failed to publish %s\n", device.modbusSlaveName);
             }
             
             // Preparar registro para SD
             SensorDataRecord record;
             record.timestamp = timestamp;
-            record.modbusModelId = device.modbusModelId;
-            record.modbusModelName = device.modbusModelName;
+            record.modbusSlaveId = device.modbusSlaveId;
+            record.modbusSlaveName = device.modbusSlaveName;
             record.deviceIp = device.ip;
             record.values = device.values;
             record.rawData = device.rawData;
@@ -395,16 +395,16 @@ void instantValuesTask(void *) {
 
         std::vector<bool> almStates;
         if (modbus.readBooleans(almDeviceIndex, almStartAddress, almCount, almStates, almDiscrete)) {
-          uint8_t almModelId = eeprom.getModbusDevice(almDeviceIndex).modbusModelId;
+          uint8_t almSlaveId = eeprom.getModbusDevice(almDeviceIndex).modbusSlaveId;
 
           // Topic device/{MAC}_var/alarms
           char alarmsTopic[48];
           snprintf(alarmsTopic, sizeof(alarmsTopic), "device/%s_var/alarms", macNoColon);
 
-          // Publicación: {deviceId},{modbusModelId},{coilsTypes},{rawData}
+          // Publicación: {deviceId},{modbusSlaveId},{coilsTypes},{rawData}
           char almPayload[128];
           int almOffset = snprintf(almPayload, sizeof(almPayload), "%d,%u,%s,",
-                                   deviceId, almModelId, almCoilsTypes.c_str());
+                                   deviceId, almSlaveId, almCoilsTypes.c_str());
           for (size_t i = 0; i < almStates.size() && almOffset < (int)sizeof(almPayload) - 2; i++) {
             almPayload[almOffset++] = almStates[i] ? '1' : '0';
           }
@@ -416,10 +416,10 @@ void instantValuesTask(void *) {
             LOGE("Alarms: failed to publish %s\n", almPayload);
           }
 
-          // Guardar en SD: {timestamp},{modbusModelId},{coilsTypes},{CoilsValues}
+          // Guardar en SD: {timestamp},{modbusSlaveId},{coilsTypes},{CoilsValues}
           if (sd.isAvailable()) {
             unsigned long almTs = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
-            if (sd.writeAlarmRecord(almTs, almModelId, almCoilsTypes.c_str(), almStates)) {
+            if (sd.writeAlarmRecord(almTs, almSlaveId, almCoilsTypes.c_str(), almStates)) {
               LOGI("SD: alarm record saved\n");
             } else {
               LOGE("SD: failed to write alarm record\n");

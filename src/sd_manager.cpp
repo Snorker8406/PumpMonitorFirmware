@@ -157,8 +157,8 @@ bool SdManager::writeDataRecord(const SensorDataRecord &record) {
     return false;
   }
 
-  // Formato: {timestamp},{modbusModelId},{modbusModelName},{hexadecimales}
-  file.printf("%lu,%u,%s,", record.timestamp, record.modbusModelId, record.modbusModelName);
+  // Formato: {timestamp},{modbusSlaveId},{modbusSlaveName},{hexadecimales}
+  file.printf("%lu,%u,%s,", record.timestamp, record.modbusSlaveId, record.modbusSlaveName);
 
   // Escribir datos hexadecimales
   for (size_t i = 0; i < record.rawData.size(); i++) {
@@ -184,9 +184,9 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
     return false;
   }
 
-  // Escribir todos los registros en formato: {timestamp},{modbusModelId},{modbusModelName},{hexadecimales}
+  // Escribir todos los registros en formato: {timestamp},{modbusSlaveId},{modbusSlaveName},{hexadecimales}
   for (const auto &record : records) {
-    file.printf("%lu,%u,%s,", record.timestamp, record.modbusModelId, record.modbusModelName);
+    file.printf("%lu,%u,%s,", record.timestamp, record.modbusSlaveId, record.modbusSlaveName);
 
     // Escribir datos hexadecimales
     for (size_t i = 0; i < record.rawData.size(); i++) {
@@ -200,7 +200,7 @@ bool SdManager::writeDataBatch(const std::vector<SensorDataRecord> &records) {
   return true;
 }
 
-bool SdManager::writeAlarmRecord(unsigned long timestamp, uint8_t modbusModelId,
+bool SdManager::writeAlarmRecord(unsigned long timestamp, uint8_t modbusSlaveId,
                                  const char* coilsTypes, const std::vector<bool> &states) {
   if (!initialized_) {
     return false;
@@ -215,8 +215,8 @@ bool SdManager::writeAlarmRecord(unsigned long timestamp, uint8_t modbusModelId,
     return false;
   }
 
-  // Formato: {timestamp},{modbusModelId},{coilsTypes},{CoilsValues}
-  file.printf("%lu,%u,%s,", timestamp, modbusModelId, coilsTypes ? coilsTypes : "");
+  // Formato: {timestamp},{modbusSlaveId},{coilsTypes},{CoilsValues}
+  file.printf("%lu,%u,%s,", timestamp, modbusSlaveId, coilsTypes ? coilsTypes : "");
 
   // Valores de coils: un '0'/'1' por coil
   for (size_t i = 0; i < states.size(); i++) {
