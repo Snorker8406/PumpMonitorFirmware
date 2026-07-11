@@ -131,20 +131,20 @@ void ModbusServerManager::begin() {
 }
 
 // Significado de los registros con semántica definida (escritos por apps externas):
-//   reg[0] -> estados de los actuadores  ("status")
+//   reg[0] -> confirmaciones             ("confirmation")
 //   reg[1] -> alarmas                    ("alarm")
 //   reg[2] -> notificaciones             ("notification")
 static constexpr uint16_t kTypedRegCount = 3;
 static constexpr const char *kTypedRegNames[kTypedRegCount] = {
-    "status", "alarm", "notification"};
+    "confirmation", "alarm", "notification"};
 static constexpr const char *kTypedRegTopics[kTypedRegCount] = {
-    "actuatorStatus", "alarmEvent", "notificationEvent"};
+    "confirmationEvent", "alarmEvent", "notificationEvent"};
 
 void ModbusServerManager::process() {
   if (!mutex_) return;
 
   // Acumular eventos en payload compacto para publicar por MQTT.
-  // Formato: serverId;address,value;address,value;...
+  // Formato: timestamp,deviceId,serverId;address,value;address,value;...
   // Si se detectan eventos con serverId distinto, se publica el lote actual
   // y se inicia uno nuevo para no mezclar emisores.
   char payload[256];
@@ -152,6 +152,12 @@ void ModbusServerManager::process() {
   bool hasAnyEvent = false;
   bool hasOpenBatch = false;
   uint8_t currentServerId = 0;
+
+  auto &rtc = RtcManager::instance();
+  auto &eeprom = EepromManager::instance();
+  const int32_t deviceId = eeprom.getDeviceID();
+  // Modelo Modbus del device de alarmas (mismo criterio que la publicación de alarmas)
+  const uint8_t modbusModelId = eeprom.getModbusDevice(eeprom.getAlarmDeviceIndex()).modbusModelId;
 
   const char *macColoned = NetworkManager::instance().macString();
   char macNoColon[13] = {0};
@@ -189,17 +195,18 @@ void ModbusServerManager::process() {
       LOGI("Modbus Server RX | %s | %s | reg[%u] = %u (0x%04X)\n",
            fcName, typeName, ev.address, ev.value, ev.value);
 
-      // MQTT: payload "{registro},{valor}" en device/{MAC}_var/{topic}
+      unsigned long ts = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
+
+      // MQTT: payload "{timestamp},{deviceId},{modbusModelId},{registro},{valor}" en device/{MAC}_var/{topic}
       char evTopic[64];
       snprintf(evTopic, sizeof(evTopic), "device/%s_var/%s",
                macNoColon, kTypedRegTopics[ev.address]);
-      char evPayload[16];
-      snprintf(evPayload, sizeof(evPayload), "%u,%u", ev.address, ev.value);
+      char evPayload[56];
+      snprintf(evPayload, sizeof(evPayload), "%lu,%ld,%u,%u,%u",
+               ts, (long)deviceId, modbusModelId, ev.address, ev.value);
       MqttManager::instance().publish(evTopic, evPayload);
 
       // SD: {timestamp},{device},{eventType},{value} en el archivo diario
-      auto &rtc = RtcManager::instance();
-      unsigned long ts = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
       SdManager::instance().writeServerEventRecord(ts, macNoColon, typeName, ev.value);
       continue;  // No incluir en el lote genérico modbusDeviceEvent
     }
@@ -211,12 +218,16 @@ void ModbusServerManager::process() {
 
     if (!hasOpenBatch) {
       currentServerId = ev.serverId;
-      offset = snprintf(payload, sizeof(payload), "%u", (unsigned)currentServerId);
+      unsigned long ts = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
+      offset = snprintf(payload, sizeof(payload), "%lu,%ld,%u",
+                        ts, (long)deviceId, (unsigned)currentServerId);
       hasOpenBatch = (offset > 0 && (size_t)offset < sizeof(payload));
     } else if (ev.serverId != currentServerId) {
       MqttManager::instance().publish(topic, payload);
       currentServerId = ev.serverId;
-      offset = snprintf(payload, sizeof(payload), "%u", (unsigned)currentServerId);
+      unsigned long ts = rtc.isAvailable() ? rtc.getUnixTime() : (millis() / 1000);
+      offset = snprintf(payload, sizeof(payload), "%lu,%ld,%u",
+                        ts, (long)deviceId, (unsigned)currentServerId);
       hasOpenBatch = (offset > 0 && (size_t)offset < sizeof(payload));
     }
 

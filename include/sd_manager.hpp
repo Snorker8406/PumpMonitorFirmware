@@ -34,7 +34,7 @@ class SdManager {
                         const char* coilsTypes, const std::vector<bool> &states);
 
   // Guardar un evento recibido por el servidor Modbus en el archivo diario.
-  // eventType: "status" (actuadores), "alarm" o "notification".
+  // eventType: "confirmation", "alarm" o "notification".
   // Formato: {timestamp},{device},{eventType},{value}
   bool writeServerEventRecord(unsigned long timestamp, const char* device,
                               const char* eventType, uint16_t value);
