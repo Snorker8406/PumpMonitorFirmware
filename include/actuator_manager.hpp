@@ -51,6 +51,12 @@ class ActuatorManager {
   // tuvo éxito. Llamar una vez al arranque cuando las conexiones estén listas.
   bool initializeFromAlarms();
 
+  // Procesa un valor de confirmación recibido en reg[0] del Modbus Server.
+  // Si el valor coincide con ConfirmManualON/ConfirmManualOFF/ConfirmRemoteON/
+  // ConfirmRemoteOFF de alguna coil, fuerza sus switches a 111 (ON) o 000 (OFF)
+  // y publica el estado confirmado ("index,111" / "index,000") en coilStatus.
+  void handleConfirmationValue(uint16_t value);
+
   // Procesa escrituras pendientes; llamado desde la task del actuador.
   void process();
 
@@ -74,4 +80,9 @@ class ActuatorManager {
   volatile bool pendingWrite_[kActuatorCoilCount]{};
   bool pendingValue_[kActuatorCoilCount]{};
   uint8_t confirmAlarmIndex_[kActuatorCoilCount]{};
+  // Valores de confirmación (0-99, únicos por coil) recibidos vía Modbus Server.
+  uint8_t confirmManualOn_[kActuatorCoilCount]{};
+  uint8_t confirmManualOff_[kActuatorCoilCount]{};
+  uint8_t confirmRemoteOn_[kActuatorCoilCount]{};
+  uint8_t confirmRemoteOff_[kActuatorCoilCount]{};
 };

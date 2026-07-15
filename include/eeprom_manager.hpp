@@ -92,23 +92,24 @@ class EepromManager {
   bool     getActuatorCoilOffValue(size_t coilIndex) const;
   bool getActuatorCoilEnabled(size_t coilIndex) const;
   uint8_t getActuatorCoilConfirmAlarmIndex(size_t coilIndex) const;
-  // Valores de confirmación (enteros 0-99) de la configuración de actuadores.
-  uint8_t getActuatorConfirmRemoteOn() const;
-  uint8_t getActuatorConfirmRemoteOff() const;
-  uint8_t getActuatorConfirmManualOn() const;
-  uint8_t getActuatorConfirmManualOff() const;
+  // Valores de confirmación (enteros 0-99, únicos por coil) recibidos en reg[0]
+  // del Modbus Server.
+  uint8_t getActuatorConfirmManualOn(size_t coilIndex) const;
+  uint8_t getActuatorConfirmManualOff(size_t coilIndex) const;
+  uint8_t getActuatorConfirmRemoteOn(size_t coilIndex) const;
+  uint8_t getActuatorConfirmRemoteOff(size_t coilIndex) const;
   // Reemplaza toda la configuración de actuadores y la persiste en EEPROM.
   // onAddresses/onValues: dirección y valor a escribir en secuencia de arranque (111).
   // offAddresses/offValues: dirección y valor a escribir en secuencia de paro (000).
   // confirmAlarmIndices: índice en el array de alarmas para confirmación de cada coil.
-  // confirmRemoteOn/confirmRemoteOff/confirmManualOn/confirmManualOff: valores 0-99.
+  // confirmManualOn/confirmManualOff/confirmRemoteOn/confirmRemoteOff: valores 0-99 por coil.
   bool setActuatorConfig(size_t deviceIndex,
                          const uint16_t* onAddresses, const bool* onValues,
                          const uint16_t* offAddresses, const bool* offValues,
                          const bool* enabled,
                          const uint8_t* confirmAlarmIndices,
-                         uint8_t confirmRemoteOn, uint8_t confirmRemoteOff,
-                         uint8_t confirmManualOn, uint8_t confirmManualOff);
+                         const uint8_t* confirmManualOn, const uint8_t* confirmManualOff,
+                         const uint8_t* confirmRemoteOn, const uint8_t* confirmRemoteOff);
   // Restablece la configuración de actuadores a los valores por defecto y persiste.
   bool clearActuatorConfig();
   
@@ -145,6 +146,10 @@ class EepromManager {
     uint8_t  offValue;         // bool
     uint8_t  enabled;          // bool
     uint8_t  confirmAlarmIndex; // índice en array de alarmas
+    uint8_t  confirmManualOn;   // valor de confirmación (0-99)
+    uint8_t  confirmManualOff;  // valor de confirmación (0-99)
+    uint8_t  confirmRemoteOn;   // valor de confirmación (0-99)
+    uint8_t  confirmRemoteOff;  // valor de confirmación (0-99)
   };
 
   // Carga la configuración de actuadores desde EEPROM (o siembra con defaults).
@@ -171,10 +176,10 @@ class EepromManager {
   bool     actuatorCoilOffValues_[kActuatorCoilCount]{};
   bool     actuatorCoilEnabled_[kActuatorCoilCount]{};
   uint8_t  actuatorCoilConfirmAlarmIndex_[kActuatorCoilCount]{};
-  uint8_t  actuatorConfirmRemoteOn_  = kActuatorConfirmRemoteOn;
-  uint8_t  actuatorConfirmRemoteOff_ = kActuatorConfirmRemoteOff;
-  uint8_t  actuatorConfirmManualOn_  = kActuatorConfirmManualOn;
-  uint8_t  actuatorConfirmManualOff_ = kActuatorConfirmManualOff;
+  uint8_t  actuatorConfirmManualOn_[kActuatorCoilCount]{};
+  uint8_t  actuatorConfirmManualOff_[kActuatorCoilCount]{};
+  uint8_t  actuatorConfirmRemoteOn_[kActuatorCoilCount]{};
+  uint8_t  actuatorConfirmRemoteOff_[kActuatorCoilCount]{};
   
   static constexpr const char* kNamespace = "pumpmon";
   static constexpr const char* kKeyUrl = "webUrl";
@@ -186,10 +191,6 @@ class EepromManager {
   static constexpr const char* kKeyModbusDevs = "mbDevs";
   static constexpr const char* kKeyActDevIdx = "actDevIdx";
   static constexpr const char* kKeyActCoils = "actCoils";
-  static constexpr const char* kKeyActCfmROn  = "actCfmROn";
-  static constexpr const char* kKeyActCfmROff = "actCfmROff";
-  static constexpr const char* kKeyActCfmMOn  = "actCfmMOn";
-  static constexpr const char* kKeyActCfmMOff = "actCfmMOff";
   static constexpr const char* kKeyAlarmDevIdx = "almDevIdx";
   static constexpr const char* kKeyAlarmStart = "almStart";
   static constexpr const char* kKeyAlarmCount = "almCount";

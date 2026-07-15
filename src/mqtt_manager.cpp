@@ -78,27 +78,26 @@ void buildModbusDevicesString(char* buffer, size_t bufferSize) {
 }
 
 // Construye el payload compacto de los actuadores (coils) en el buffer dado.
-// Formato: deviceIndex,confirmManualOn,confirmManualOff,confirmRemoteOn,confirmRemoteOff;coilIndex,onAddr,onVal,offAddr,offVal,enabled,confirmAlarmIdx;...
-// Ej: "1,20,21,10,11;0,0,1,0,0,1,0;1,1,1,1,0,1,1;2,2,1,2,0,0,2;3,3,1,3,0,1,3"
+// Formato: deviceIndex;coilIndex,onAddr,onVal,offAddr,offVal,enabled,confirmAlarmIdx,confirmManualOn,confirmManualOff,confirmRemoteOn,confirmRemoteOff;...
+// Ej: "1;0,0,1,0,0,1,0,11,21,31,41;1,1,1,1,0,1,1,12,22,32,42;..."
 void buildActuatorsString(char* buffer, size_t bufferSize) {
   auto &eeprom = EepromManager::instance();
-  int n = snprintf(buffer, bufferSize, "%u,%u,%u,%u,%u",
-                   (unsigned)eeprom.getActuatorModbusDeviceIndex(),
-                   (unsigned)eeprom.getActuatorConfirmManualOn(),
-                   (unsigned)eeprom.getActuatorConfirmManualOff(),
-                   (unsigned)eeprom.getActuatorConfirmRemoteOn(),
-                   (unsigned)eeprom.getActuatorConfirmRemoteOff());
+  int n = snprintf(buffer, bufferSize, "%u", (unsigned)eeprom.getActuatorModbusDeviceIndex());
   size_t offset = (n > 0) ? (size_t)n : 0;
   for (size_t i = 0; i < kActuatorCoilCount && offset < bufferSize - 1; ++i) {
     int written = snprintf(buffer + offset, bufferSize - offset,
-                           ";%u,%u,%u,%u,%u,%u,%u",
+                           ";%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u",
                            (unsigned)i,
                            (unsigned)eeprom.getActuatorCoilOnAddress(i),
                            (unsigned)(eeprom.getActuatorCoilOnValue(i) ? 1 : 0),
                            (unsigned)eeprom.getActuatorCoilOffAddress(i),
                            (unsigned)(eeprom.getActuatorCoilOffValue(i) ? 1 : 0),
                            (unsigned)(eeprom.getActuatorCoilEnabled(i) ? 1 : 0),
-                           (unsigned)eeprom.getActuatorCoilConfirmAlarmIndex(i));
+                           (unsigned)eeprom.getActuatorCoilConfirmAlarmIndex(i),
+                           (unsigned)eeprom.getActuatorConfirmManualOn(i),
+                           (unsigned)eeprom.getActuatorConfirmManualOff(i),
+                           (unsigned)eeprom.getActuatorConfirmRemoteOn(i),
+                           (unsigned)eeprom.getActuatorConfirmRemoteOff(i));
     if (written > 0) offset += (size_t)written;
   }
 }
@@ -659,15 +658,15 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
   }
   // Procesar saveActuators: reemplazar la configuracion de los actuadores en EEPROM
   // y recargarla en ejecucion.
-  // Payload compacto: deviceIndex,confirmManualOn,confirmManualOff,confirmRemoteOn,confirmRemoteOff;coilIndex,onAddress,onValue,offAddress,offValue,confirmationsEnabled,confirmAlarmIdx;...
+  // Payload compacto: deviceIndex;coilIndex,onAddress,onValue,offAddress,offValue,confirmationsEnabled,confirmAlarmIdx,confirmManualOn,confirmManualOff,confirmRemoteOn,confirmRemoteOff;...
   //   deviceIndex: indice del dispositivo Modbus (0..count-1) usado para escribir los coils
-  //   confirmManualOn/confirmManualOff/confirmRemoteOn/confirmRemoteOff: enteros 0-99
-  //     (opcionales: si se omiten conservan su valor actual)
   //   coilIndex:   indice del coil (0..kActuatorCoilCount-1)
   //   onAddress/onValue:   direccion y valor (0/1) a escribir en secuencia de arranque (111)
   //   offAddress/offValue: direccion y valor (0/1) a escribir en secuencia de paro (000)
   //   confirmationsEnabled: 0/1
-  // Ej: "1,20,21,10,11;0,0,1,0,0,1;1,1,1,1,0,1;2,2,1,2,0,1;3,3,1,3,0,1"
+  //   confirmManualOn/confirmManualOff/confirmRemoteOn/confirmRemoteOff: enteros 0-99
+  //     (opcionales por coil: si se omiten conservan su valor actual)
+  // Ej: "1;0,0,1,0,0,1,0,11,21,31,41;1,1,1,1,0,1,1,12,22,32,42"
   // Los coils no incluidos en el payload conservan su valor actual.
   else if (strstr(topic, "/saveActuators") != nullptr) {
     char buf[256];
@@ -682,6 +681,10 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     bool     offValues[kActuatorCoilCount];
     bool     enabled[kActuatorCoilCount];
     uint8_t  confirmAlarmIndices[kActuatorCoilCount];
+    uint8_t  confirmManualOn[kActuatorCoilCount];
+    uint8_t  confirmManualOff[kActuatorCoilCount];
+    uint8_t  confirmRemoteOn[kActuatorCoilCount];
+    uint8_t  confirmRemoteOff[kActuatorCoilCount];
     for (size_t i = 0; i < kActuatorCoilCount; ++i) {
       onAddresses[i]          = eeprom.getActuatorCoilOnAddress(i);
       onValues[i]             = eeprom.getActuatorCoilOnValue(i);
@@ -689,11 +692,11 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       offValues[i]            = eeprom.getActuatorCoilOffValue(i);
       enabled[i]              = eeprom.getActuatorCoilEnabled(i);
       confirmAlarmIndices[i]  = eeprom.getActuatorCoilConfirmAlarmIndex(i);
+      confirmManualOn[i]      = eeprom.getActuatorConfirmManualOn(i);
+      confirmManualOff[i]     = eeprom.getActuatorConfirmManualOff(i);
+      confirmRemoteOn[i]      = eeprom.getActuatorConfirmRemoteOn(i);
+      confirmRemoteOff[i]     = eeprom.getActuatorConfirmRemoteOff(i);
     }
-    uint8_t confirmRemoteOn  = eeprom.getActuatorConfirmRemoteOn();
-    uint8_t confirmRemoteOff = eeprom.getActuatorConfirmRemoteOff();
-    uint8_t confirmManualOn  = eeprom.getActuatorConfirmManualOn();
-    uint8_t confirmManualOff = eeprom.getActuatorConfirmManualOff();
 
     bool parseOk = true;
 
@@ -705,41 +708,13 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
 
     size_t deviceIndex = eeprom.getActuatorModbusDeviceIndex();
     if (parseOk) {
-      // El primer segmento puede incluir las confirmaciones:
-      // deviceIndex[,confirmManualOn,confirmManualOff,confirmRemoteOn,confirmRemoteOff]
-      char* hSave = nullptr;
-      char* diStr = strtok_r(devIdxStr, ",", &hSave);
-      int di = diStr ? atoi(diStr) : -1;
+      int di = atoi(devIdxStr);
       if (di < 0 || (size_t)di >= eeprom.getModbusDeviceCount()) {
         LOGE("MQTT saveActuators: deviceIndex invalido '%s' (count=%u)\n",
-             diStr ? diStr : "", (unsigned)eeprom.getModbusDeviceCount());
+             devIdxStr, (unsigned)eeprom.getModbusDeviceCount());
         parseOk = false;
       } else {
         deviceIndex = (size_t)di;
-        char* cMOnStr  = strtok_r(nullptr, ",", &hSave);
-        char* cMOffStr = strtok_r(nullptr, ",", &hSave);
-        char* cROnStr  = strtok_r(nullptr, ",", &hSave);
-        char* cROffStr = strtok_r(nullptr, ",", &hSave);
-        if (cMOnStr && cMOffStr && cROnStr && cROffStr) {
-          int cMOn  = atoi(cMOnStr);
-          int cMOff = atoi(cMOffStr);
-          int cROn  = atoi(cROnStr);
-          int cROff = atoi(cROffStr);
-          if (cMOn < 0 || cMOn > 99 || cMOff < 0 || cMOff > 99 ||
-              cROn < 0 || cROn > 99 || cROff < 0 || cROff > 99) {
-            LOGE("MQTT saveActuators: confirm values invalidos (0-99)\n");
-            parseOk = false;
-          } else {
-            confirmManualOn  = (uint8_t)cMOn;
-            confirmManualOff = (uint8_t)cMOff;
-            confirmRemoteOn  = (uint8_t)cROn;
-            confirmRemoteOff = (uint8_t)cROff;
-          }
-        } else if (cMOnStr) {
-          // Se enviaron algunas confirmaciones pero no las 4: payload invalido.
-          LOGE("MQTT saveActuators: se esperan 4 confirm values\n");
-          parseOk = false;
-        }
       }
     }
 
@@ -774,13 +749,39 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
         enabled[ci]             = (atoi(enStr) != 0);
         confirmAlarmIndices[ci] = (uint8_t)atoi(confAlmIdxStr);
 
+        // Confirmaciones por coil (opcionales: se envian las 4 o ninguna).
+        char* cMOnStr  = strtok_r(nullptr, ",", &fSave);
+        char* cMOffStr = strtok_r(nullptr, ",", &fSave);
+        char* cROnStr  = strtok_r(nullptr, ",", &fSave);
+        char* cROffStr = strtok_r(nullptr, ",", &fSave);
+        if (cMOnStr && cMOffStr && cROnStr && cROffStr) {
+          int cMOn  = atoi(cMOnStr);
+          int cMOff = atoi(cMOffStr);
+          int cROn  = atoi(cROnStr);
+          int cROff = atoi(cROffStr);
+          if (cMOn < 0 || cMOn > 99 || cMOff < 0 || cMOff > 99 ||
+              cROn < 0 || cROn > 99 || cROff < 0 || cROff > 99) {
+            LOGE("MQTT saveActuators: confirm values invalidos (0-99) coil %d\n", ci);
+            parseOk = false;
+            break;
+          }
+          confirmManualOn[ci]  = (uint8_t)cMOn;
+          confirmManualOff[ci] = (uint8_t)cMOff;
+          confirmRemoteOn[ci]  = (uint8_t)cROn;
+          confirmRemoteOff[ci] = (uint8_t)cROff;
+        } else if (cMOnStr) {
+          LOGE("MQTT saveActuators: se esperan 4 confirm values (coil %d)\n", ci);
+          parseOk = false;
+          break;
+        }
+
         coilTok = strtok_r(nullptr, ";", &tokSave);
       }
     }
 
     if (parseOk) {
       if (eeprom.setActuatorConfig(deviceIndex, onAddresses, onValues, offAddresses, offValues, enabled, confirmAlarmIndices,
-                                   confirmRemoteOn, confirmRemoteOff, confirmManualOn, confirmManualOff)) {
+                                   confirmManualOn, confirmManualOff, confirmRemoteOn, confirmRemoteOff)) {
         ActuatorManager::instance().reloadConfig();
         LOGI("MQTT: Actuators config saved (deviceIndex=%u)\n", (unsigned)deviceIndex);
       } else {

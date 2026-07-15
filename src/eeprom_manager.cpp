@@ -807,20 +807,32 @@ uint8_t EepromManager::getActuatorCoilConfirmAlarmIndex(size_t coilIndex) const 
   return actuatorCoilConfirmAlarmIndex_[coilIndex];
 }
 
-uint8_t EepromManager::getActuatorConfirmRemoteOn() const {
-  return actuatorConfirmRemoteOn_;
+uint8_t EepromManager::getActuatorConfirmManualOn(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return 0;
+  }
+  return actuatorConfirmManualOn_[coilIndex];
 }
 
-uint8_t EepromManager::getActuatorConfirmRemoteOff() const {
-  return actuatorConfirmRemoteOff_;
+uint8_t EepromManager::getActuatorConfirmManualOff(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return 0;
+  }
+  return actuatorConfirmManualOff_[coilIndex];
 }
 
-uint8_t EepromManager::getActuatorConfirmManualOn() const {
-  return actuatorConfirmManualOn_;
+uint8_t EepromManager::getActuatorConfirmRemoteOn(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return 0;
+  }
+  return actuatorConfirmRemoteOn_[coilIndex];
 }
 
-uint8_t EepromManager::getActuatorConfirmManualOff() const {
-  return actuatorConfirmManualOff_;
+uint8_t EepromManager::getActuatorConfirmRemoteOff(size_t coilIndex) const {
+  if (coilIndex >= kActuatorCoilCount) {
+    return 0;
+  }
+  return actuatorConfirmRemoteOff_[coilIndex];
 }
 
 void EepromManager::seedActuatorsFromDefaults() {
@@ -832,11 +844,11 @@ void EepromManager::seedActuatorsFromDefaults() {
     actuatorCoilOffValues_[i]         = kActuatorCoilOffValues[i];
     actuatorCoilEnabled_[i]           = kActuatorConfirmationsEnabled[i];
     actuatorCoilConfirmAlarmIndex_[i] = kActuatorConfirmAlarmIndex[i];
+    actuatorConfirmManualOn_[i]       = kActuatorConfirmManualOn[i];
+    actuatorConfirmManualOff_[i]      = kActuatorConfirmManualOff[i];
+    actuatorConfirmRemoteOn_[i]       = kActuatorConfirmRemoteOn[i];
+    actuatorConfirmRemoteOff_[i]      = kActuatorConfirmRemoteOff[i];
   }
-  actuatorConfirmRemoteOn_  = kActuatorConfirmRemoteOn;
-  actuatorConfirmRemoteOff_ = kActuatorConfirmRemoteOff;
-  actuatorConfirmManualOn_  = kActuatorConfirmManualOn;
-  actuatorConfirmManualOff_ = kActuatorConfirmManualOff;
 }
 
 void EepromManager::loadActuators() {
@@ -869,11 +881,11 @@ void EepromManager::loadActuators() {
     actuatorCoilOffValues_[i]         = (buf[i].offValue != 0);
     actuatorCoilEnabled_[i]           = (buf[i].enabled != 0);
     actuatorCoilConfirmAlarmIndex_[i] = buf[i].confirmAlarmIndex;
+    actuatorConfirmManualOn_[i]       = buf[i].confirmManualOn;
+    actuatorConfirmManualOff_[i]      = buf[i].confirmManualOff;
+    actuatorConfirmRemoteOn_[i]       = buf[i].confirmRemoteOn;
+    actuatorConfirmRemoteOff_[i]      = buf[i].confirmRemoteOff;
   }
-  actuatorConfirmRemoteOn_  = prefs_.getUChar(kKeyActCfmROn,  kActuatorConfirmRemoteOn);
-  actuatorConfirmRemoteOff_ = prefs_.getUChar(kKeyActCfmROff, kActuatorConfirmRemoteOff);
-  actuatorConfirmManualOn_  = prefs_.getUChar(kKeyActCfmMOn,  kActuatorConfirmManualOn);
-  actuatorConfirmManualOff_ = prefs_.getUChar(kKeyActCfmMOff, kActuatorConfirmManualOff);
   LOGI("EEPROM: Actuators loaded (deviceIndex=%u)\n", (unsigned)actuatorDeviceIndex_);
 }
 
@@ -891,13 +903,13 @@ bool EepromManager::saveActuators() {
     buf[i].offValue          = actuatorCoilOffValues_[i] ? 1 : 0;
     buf[i].enabled           = actuatorCoilEnabled_[i]   ? 1 : 0;
     buf[i].confirmAlarmIndex = actuatorCoilConfirmAlarmIndex_[i];
+    buf[i].confirmManualOn   = actuatorConfirmManualOn_[i];
+    buf[i].confirmManualOff  = actuatorConfirmManualOff_[i];
+    buf[i].confirmRemoteOn   = actuatorConfirmRemoteOn_[i];
+    buf[i].confirmRemoteOff  = actuatorConfirmRemoteOff_[i];
   }
 
   prefs_.putUChar(kKeyActDevIdx, (uint8_t)actuatorDeviceIndex_);
-  prefs_.putUChar(kKeyActCfmROn,  actuatorConfirmRemoteOn_);
-  prefs_.putUChar(kKeyActCfmROff, actuatorConfirmRemoteOff_);
-  prefs_.putUChar(kKeyActCfmMOn,  actuatorConfirmManualOn_);
-  prefs_.putUChar(kKeyActCfmMOff, actuatorConfirmManualOff_);
   size_t written = prefs_.putBytes(kKeyActCoils, buf, sizeof(buf));
   if (written != sizeof(buf)) {
     LOGE("EEPROM: Failed to write actuators\n");
@@ -912,15 +924,19 @@ bool EepromManager::setActuatorConfig(size_t deviceIndex,
                                        const uint16_t* offAddresses, const bool* offValues,
                                        const bool* enabled,
                                        const uint8_t* confirmAlarmIndices,
-                                       uint8_t confirmRemoteOn, uint8_t confirmRemoteOff,
-                                       uint8_t confirmManualOn, uint8_t confirmManualOff) {
-  if (!onAddresses || !onValues || !offAddresses || !offValues || !enabled || !confirmAlarmIndices) {
+                                       const uint8_t* confirmManualOn, const uint8_t* confirmManualOff,
+                                       const uint8_t* confirmRemoteOn, const uint8_t* confirmRemoteOff) {
+  if (!onAddresses || !onValues || !offAddresses || !offValues || !enabled || !confirmAlarmIndices ||
+      !confirmManualOn || !confirmManualOff || !confirmRemoteOn || !confirmRemoteOff) {
     LOGE("EEPROM: Invalid actuator config\n");
     return false;
   }
-  if (confirmRemoteOn > 99 || confirmRemoteOff > 99 || confirmManualOn > 99 || confirmManualOff > 99) {
-    LOGE("EEPROM: Invalid actuator confirm values (must be 0-99)\n");
-    return false;
+  for (size_t i = 0; i < kActuatorCoilCount; ++i) {
+    if (confirmManualOn[i] > 99 || confirmManualOff[i] > 99 ||
+        confirmRemoteOn[i] > 99 || confirmRemoteOff[i] > 99) {
+      LOGE("EEPROM: Invalid actuator confirm values (must be 0-99)\n");
+      return false;
+    }
   }
   actuatorDeviceIndex_ = deviceIndex;
   for (size_t i = 0; i < kActuatorCoilCount; ++i) {
@@ -930,11 +946,11 @@ bool EepromManager::setActuatorConfig(size_t deviceIndex,
     actuatorCoilOffValues_[i]         = offValues[i];
     actuatorCoilEnabled_[i]           = enabled[i];
     actuatorCoilConfirmAlarmIndex_[i] = confirmAlarmIndices[i];
+    actuatorConfirmManualOn_[i]       = confirmManualOn[i];
+    actuatorConfirmManualOff_[i]      = confirmManualOff[i];
+    actuatorConfirmRemoteOn_[i]       = confirmRemoteOn[i];
+    actuatorConfirmRemoteOff_[i]      = confirmRemoteOff[i];
   }
-  actuatorConfirmRemoteOn_  = confirmRemoteOn;
-  actuatorConfirmRemoteOff_ = confirmRemoteOff;
-  actuatorConfirmManualOn_  = confirmManualOn;
-  actuatorConfirmManualOff_ = confirmManualOff;
   return saveActuators();
 }
 

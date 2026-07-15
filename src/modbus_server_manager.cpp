@@ -1,5 +1,6 @@
 #include "modbus_server_manager.hpp"
 
+#include "actuator_manager.hpp"
 #include "log.hpp"
 #include "mqtt_manager.hpp"
 #include "network_manager.hpp"
@@ -208,6 +209,13 @@ void ModbusServerManager::process() {
 
       // SD: {timestamp},{device},{eventType},{value} en el archivo diario
       SdManager::instance().writeServerEventRecord(ts, macNoColon, typeName, ev.value);
+
+      // reg[0] (confirmation): si el valor coincide con ConfirmManualON/OFF o
+      // ConfirmRemoteON/OFF de alguna coil, el ActuatorManager fuerza sus
+      // switches a 111/000 y publica el estado confirmado.
+      if (ev.address == 0) {
+        ActuatorManager::instance().handleConfirmationValue(ev.value);
+      }
       continue;  // No incluir en el lote genérico modbusDeviceEvent
     }
 

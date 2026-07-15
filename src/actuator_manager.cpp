@@ -63,6 +63,10 @@ void ActuatorManager::reloadConfig() {
     coilOffValues_[i]         = eeprom.getActuatorCoilOffValue(i);
     confirmationsEnabled_[i]  = eeprom.getActuatorCoilEnabled(i);
     confirmAlarmIndex_[i]     = eeprom.getActuatorCoilConfirmAlarmIndex(i);
+    confirmManualOn_[i]       = eeprom.getActuatorConfirmManualOn(i);
+    confirmManualOff_[i]      = eeprom.getActuatorConfirmManualOff(i);
+    confirmRemoteOn_[i]       = eeprom.getActuatorConfirmRemoteOn(i);
+    confirmRemoteOff_[i]      = eeprom.getActuatorConfirmRemoteOff(i);
   }
   LOGI("ActuatorManager config loaded (deviceIndex=%u)\n", (unsigned)modbusDeviceIndex_);
 }
@@ -293,6 +297,53 @@ bool ActuatorManager::initializeFromAlarms() {
   // Publicar el resumen general de todas las coils.
   publishAllStatus();
   return true;
+}
+
+void ActuatorManager::handleConfirmationValue(uint16_t value) {
+  // Buscar a qué coil y acción corresponde el valor (los valores son únicos por coil).
+  int coilIndex = -1;
+  bool on = false;
+  const char* kind = nullptr;
+  for (size_t i = 0; i < kActuatorCoilCount; i++) {
+    if (value == confirmManualOn_[i])       { coilIndex = (int)i; on = true;  kind = "ManualON"; }
+    else if (value == confirmManualOff_[i]) { coilIndex = (int)i; on = false; kind = "ManualOFF"; }
+    else if (value == confirmRemoteOn_[i])  { coilIndex = (int)i; on = true;  kind = "RemoteON"; }
+    else if (value == confirmRemoteOff_[i]) { coilIndex = (int)i; on = false; kind = "RemoteOFF"; }
+    if (coilIndex >= 0) break;
+  }
+
+  if (coilIndex < 0) {
+    LOGW("Actuator confirm: valor %u no corresponde a ninguna coil\n", (unsigned)value);
+    return;
+  }
+
+  if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    LOGE("handleConfirmationValue: mutex timeout\n");
+    return;
+  }
+  // Forzar todos los switches al estado confirmado (111 ON / 000 OFF) sin
+  // disparar escrituras Modbus: el estado físico ya sucedió (por eso llegó la
+  // confirmación); solo se refleja y publica.
+  for (uint8_t c = 0; c < kActuatorConfirmCount; c++) {
+    confirm_[coilIndex][c] = on;
+  }
+  pendingWrite_[coilIndex] = false;
+
+  char states[kActuatorConfirmCount + 1];
+  for (uint8_t c = 0; c < kActuatorConfirmCount; c++) {
+    states[c] = on ? '1' : '0';
+  }
+  states[kActuatorConfirmCount] = '\0';
+  xSemaphoreGive(mutex_);
+
+  LOGI("Actuator confirm %s (valor %u) -> coil %u = %s\n",
+       kind, (unsigned)value, (unsigned)coilIndex, states);
+
+  // Publicar el estado confirmado: "index,111" o "index,000" (mismo formato
+  // y topic que los estados intermedios de la secuencia).
+  char payload[24];
+  snprintf(payload, sizeof(payload), "%u,%s", (unsigned)coilIndex, states);
+  publishStatus("coilStatus", payload);
 }
 
 void ActuatorManager::triggerWrite(size_t coilIndex, bool value) {
