@@ -807,6 +807,22 @@ uint8_t EepromManager::getActuatorCoilConfirmAlarmIndex(size_t coilIndex) const 
   return actuatorCoilConfirmAlarmIndex_[coilIndex];
 }
 
+uint8_t EepromManager::getActuatorConfirmRemoteOn() const {
+  return actuatorConfirmRemoteOn_;
+}
+
+uint8_t EepromManager::getActuatorConfirmRemoteOff() const {
+  return actuatorConfirmRemoteOff_;
+}
+
+uint8_t EepromManager::getActuatorConfirmManualOn() const {
+  return actuatorConfirmManualOn_;
+}
+
+uint8_t EepromManager::getActuatorConfirmManualOff() const {
+  return actuatorConfirmManualOff_;
+}
+
 void EepromManager::seedActuatorsFromDefaults() {
   actuatorDeviceIndex_ = kActuatorModbusDeviceIndex;
   for (size_t i = 0; i < kActuatorCoilCount; ++i) {
@@ -817,6 +833,10 @@ void EepromManager::seedActuatorsFromDefaults() {
     actuatorCoilEnabled_[i]           = kActuatorConfirmationsEnabled[i];
     actuatorCoilConfirmAlarmIndex_[i] = kActuatorConfirmAlarmIndex[i];
   }
+  actuatorConfirmRemoteOn_  = kActuatorConfirmRemoteOn;
+  actuatorConfirmRemoteOff_ = kActuatorConfirmRemoteOff;
+  actuatorConfirmManualOn_  = kActuatorConfirmManualOn;
+  actuatorConfirmManualOff_ = kActuatorConfirmManualOff;
 }
 
 void EepromManager::loadActuators() {
@@ -850,6 +870,10 @@ void EepromManager::loadActuators() {
     actuatorCoilEnabled_[i]           = (buf[i].enabled != 0);
     actuatorCoilConfirmAlarmIndex_[i] = buf[i].confirmAlarmIndex;
   }
+  actuatorConfirmRemoteOn_  = prefs_.getUChar(kKeyActCfmROn,  kActuatorConfirmRemoteOn);
+  actuatorConfirmRemoteOff_ = prefs_.getUChar(kKeyActCfmROff, kActuatorConfirmRemoteOff);
+  actuatorConfirmManualOn_  = prefs_.getUChar(kKeyActCfmMOn,  kActuatorConfirmManualOn);
+  actuatorConfirmManualOff_ = prefs_.getUChar(kKeyActCfmMOff, kActuatorConfirmManualOff);
   LOGI("EEPROM: Actuators loaded (deviceIndex=%u)\n", (unsigned)actuatorDeviceIndex_);
 }
 
@@ -870,6 +894,10 @@ bool EepromManager::saveActuators() {
   }
 
   prefs_.putUChar(kKeyActDevIdx, (uint8_t)actuatorDeviceIndex_);
+  prefs_.putUChar(kKeyActCfmROn,  actuatorConfirmRemoteOn_);
+  prefs_.putUChar(kKeyActCfmROff, actuatorConfirmRemoteOff_);
+  prefs_.putUChar(kKeyActCfmMOn,  actuatorConfirmManualOn_);
+  prefs_.putUChar(kKeyActCfmMOff, actuatorConfirmManualOff_);
   size_t written = prefs_.putBytes(kKeyActCoils, buf, sizeof(buf));
   if (written != sizeof(buf)) {
     LOGE("EEPROM: Failed to write actuators\n");
@@ -883,9 +911,15 @@ bool EepromManager::setActuatorConfig(size_t deviceIndex,
                                        const uint16_t* onAddresses, const bool* onValues,
                                        const uint16_t* offAddresses, const bool* offValues,
                                        const bool* enabled,
-                                       const uint8_t* confirmAlarmIndices) {
+                                       const uint8_t* confirmAlarmIndices,
+                                       uint8_t confirmRemoteOn, uint8_t confirmRemoteOff,
+                                       uint8_t confirmManualOn, uint8_t confirmManualOff) {
   if (!onAddresses || !onValues || !offAddresses || !offValues || !enabled || !confirmAlarmIndices) {
     LOGE("EEPROM: Invalid actuator config\n");
+    return false;
+  }
+  if (confirmRemoteOn > 99 || confirmRemoteOff > 99 || confirmManualOn > 99 || confirmManualOff > 99) {
+    LOGE("EEPROM: Invalid actuator confirm values (must be 0-99)\n");
     return false;
   }
   actuatorDeviceIndex_ = deviceIndex;
@@ -897,6 +931,10 @@ bool EepromManager::setActuatorConfig(size_t deviceIndex,
     actuatorCoilEnabled_[i]           = enabled[i];
     actuatorCoilConfirmAlarmIndex_[i] = confirmAlarmIndices[i];
   }
+  actuatorConfirmRemoteOn_  = confirmRemoteOn;
+  actuatorConfirmRemoteOff_ = confirmRemoteOff;
+  actuatorConfirmManualOn_  = confirmManualOn;
+  actuatorConfirmManualOff_ = confirmManualOff;
   return saveActuators();
 }
 

@@ -92,15 +92,23 @@ class EepromManager {
   bool     getActuatorCoilOffValue(size_t coilIndex) const;
   bool getActuatorCoilEnabled(size_t coilIndex) const;
   uint8_t getActuatorCoilConfirmAlarmIndex(size_t coilIndex) const;
+  // Valores de confirmación (enteros 0-99) de la configuración de actuadores.
+  uint8_t getActuatorConfirmRemoteOn() const;
+  uint8_t getActuatorConfirmRemoteOff() const;
+  uint8_t getActuatorConfirmManualOn() const;
+  uint8_t getActuatorConfirmManualOff() const;
   // Reemplaza toda la configuración de actuadores y la persiste en EEPROM.
   // onAddresses/onValues: dirección y valor a escribir en secuencia de arranque (111).
   // offAddresses/offValues: dirección y valor a escribir en secuencia de paro (000).
   // confirmAlarmIndices: índice en el array de alarmas para confirmación de cada coil.
+  // confirmRemoteOn/confirmRemoteOff/confirmManualOn/confirmManualOff: valores 0-99.
   bool setActuatorConfig(size_t deviceIndex,
                          const uint16_t* onAddresses, const bool* onValues,
                          const uint16_t* offAddresses, const bool* offValues,
                          const bool* enabled,
-                         const uint8_t* confirmAlarmIndices);
+                         const uint8_t* confirmAlarmIndices,
+                         uint8_t confirmRemoteOn, uint8_t confirmRemoteOff,
+                         uint8_t confirmManualOn, uint8_t confirmManualOff);
   // Restablece la configuración de actuadores a los valores por defecto y persiste.
   bool clearActuatorConfig();
   
@@ -163,6 +171,10 @@ class EepromManager {
   bool     actuatorCoilOffValues_[kActuatorCoilCount]{};
   bool     actuatorCoilEnabled_[kActuatorCoilCount]{};
   uint8_t  actuatorCoilConfirmAlarmIndex_[kActuatorCoilCount]{};
+  uint8_t  actuatorConfirmRemoteOn_  = kActuatorConfirmRemoteOn;
+  uint8_t  actuatorConfirmRemoteOff_ = kActuatorConfirmRemoteOff;
+  uint8_t  actuatorConfirmManualOn_  = kActuatorConfirmManualOn;
+  uint8_t  actuatorConfirmManualOff_ = kActuatorConfirmManualOff;
   
   static constexpr const char* kNamespace = "pumpmon";
   static constexpr const char* kKeyUrl = "webUrl";
@@ -174,6 +186,10 @@ class EepromManager {
   static constexpr const char* kKeyModbusDevs = "mbDevs";
   static constexpr const char* kKeyActDevIdx = "actDevIdx";
   static constexpr const char* kKeyActCoils = "actCoils";
+  static constexpr const char* kKeyActCfmROn  = "actCfmROn";
+  static constexpr const char* kKeyActCfmROff = "actCfmROff";
+  static constexpr const char* kKeyActCfmMOn  = "actCfmMOn";
+  static constexpr const char* kKeyActCfmMOff = "actCfmMOff";
   static constexpr const char* kKeyAlarmDevIdx = "almDevIdx";
   static constexpr const char* kKeyAlarmStart = "almStart";
   static constexpr const char* kKeyAlarmCount = "almCount";

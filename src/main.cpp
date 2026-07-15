@@ -397,9 +397,9 @@ void instantValuesTask(void *) {
         if (modbus.readBooleans(almDeviceIndex, almStartAddress, almCount, almStates, almDiscrete)) {
           uint8_t almSlaveId = eeprom.getModbusDevice(almDeviceIndex).modbusSlaveId;
 
-          // Topic device/{MAC}_var/alarms
+          // Topic device/{MAC}_alarms (misma lógica que device/{MAC}_instVal)
           char alarmsTopic[48];
-          snprintf(alarmsTopic, sizeof(alarmsTopic), "device/%s_var/alarms", macNoColon);
+          snprintf(alarmsTopic, sizeof(alarmsTopic), "device/%s_alarms", macNoColon);
 
           // Publicación: {deviceId},{modbusSlaveId},{coilsTypes},{rawData}
           char almPayload[128];
