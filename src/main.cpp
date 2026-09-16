@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 
 #include "app_config.hpp"
 #include "modbus_manager.hpp"
@@ -491,6 +492,13 @@ void setup() {
 
   // ----- Startup & initialization -----
   LOGI("Booting...\n");
+
+  // Ampliar el watchdog de tareas antes de levantar la red. El handshake TLS
+  // verifica firmas ECDSA P-384 por software sin ceder el procesador, y con los
+  // 5 s por defecto de Arduino IDLE0 se queda sin tiempo y el equipo entra en
+  // bucle de reinicio. Ver kTaskWdtTimeoutSec en app_config.hpp.
+  esp_task_wdt_init(kTaskWdtTimeoutSec, true);
+  LOGI("Task watchdog: %u s\n", (unsigned)kTaskWdtTimeoutSec);
   
   // Inicializar EEPROM
   EepromManager::instance().begin();

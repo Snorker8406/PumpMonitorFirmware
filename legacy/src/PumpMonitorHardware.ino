@@ -66,7 +66,7 @@
 
 char mqtt_server[30] = "mqtt.agrotecsa.com.mx";
 int mqtt_port = 8883;
-char mqtt_user[30] = "PM_New";
+char mqtt_user[30] = "PM_Dev";
 char mqtt_pass[30] = "AgroTECSA321";
 
 // const char *mqtt_server = "ioticos.org";
