@@ -3,6 +3,47 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/).
 Rama de trabajo: `main`.
 
+## [DEV.08] — 2026-09-16
+
+### Added
+
+- **Reloj del sistema por SNTP**, para que mbedTLS valide también las **fechas**
+  del certificado del broker. Hasta ahora el ESP32 arrancaba en 1970 y, sin
+  hora, mbedTLS **omitía** esa comprobación: aceptaba un certificado vencido o
+  suplantado mientras la cadena encajara.
+
+  - `NetworkManager::beginTimeSync()` arranca el cliente SNTP y no bloquea.
+  - `NetworkManager::waitForSystemClock()` espera hasta 10 s a que llegue la
+    hora; si no llega se continúa igual y SNTP sigue reintentando por su cuenta.
+  - Se llaman desde `setup()`, con la red lista y antes de crear las tareas.
+  - `configTime(0, 0, …)`, o sea UTC sin horario de verano, que es contra lo que
+    mbedTLS compara `notBefore` y `notAfter`.
+  - `kEnableNtpTimeSync` en `app_config.hpp` permite desactivarlo y recompilar.
+
+  **Por qué no se usa el DS3231:** guarda hora **local sin zona** (la SPA envía
+  `adjustDeviceTime` con la hora del navegador tal cual), así que tomarlo como
+  UTC dejaría el reloj corrido varias horas y el equipo podría rechazar un
+  certificado recién emitido por verlo "en el futuro". El RTC sigue siendo la
+  fuente de los timestamps de la aplicación y no se toca.
+
+  **Es el tercer intento.** `DEV.05` y `DEV.06` llevaban este mismo cambio y
+  dejaban el equipo en bucle de arranque, pero la causa no era el reloj: era el
+  coste de verificar la cadena, arreglado en `DEV.07`. Ahora se reintenta sobre
+  una base que ya arranca de forma estable.
+
+### Changed
+
+- Efecto secundario deseado: el respaldo de `SdManager` que usa el reloj del
+  sistema cuando el RTC no está disponible (`generateFilename`) pasa de generar
+  nombres con fecha de 1970 a fechas reales en UTC.
+
+### Nota de operación
+
+A partir de esta versión el dispositivo **rechaza** un certificado vencido en
+lugar de aceptarlo. Es lo correcto, pero implica que si la renovación del broker
+vuelve a fallar, los equipos se quedan sin MQTT. La renovación automática quedó
+arreglada el 2026-09-16; ver `../docs/RENOVACION_TLS.md`.
+
 ## [DEV.07] — 2026-09-16
 
 ### Fixed
@@ -75,7 +116,7 @@ Rama de trabajo: `main`.
   pendiente y debería reintentarse **sobre `DEV.07`**, ahora que el arranque es
   estable. Ver `../docs/RENOVACION_TLS.md` §9.3.
 
-### Pendiente
+### Pendiente en su momento
 
-- El firmware no ajusta el reloj del sistema, así que mbedTLS valida la cadena
-  del certificado pero **no las fechas**: aceptaría uno vencido.
+- Quedaba sin ajustar el reloj del sistema, así que mbedTLS validaba la cadena
+  pero no las fechas. **Resuelto en `DEV.08`.**

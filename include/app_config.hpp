@@ -10,7 +10,7 @@
 constexpr char kDeviceHostname[] = "pump-monitor";
 
 // Firmware Version (fija en código)
-constexpr const char* kFirmwareVersion = "DEV.07";
+constexpr const char* kFirmwareVersion = "DEV.08";
 
 // Firmware OTA Configuration
 constexpr const char* kFirmwareBaseUrl = "https://pumpmonitor.agrotecsa.com.mx";
@@ -190,6 +190,32 @@ constexpr int kRtcSclPin = 5;
 // Con el intermedio como ancla (ver kMqttCaCert) el caso normal es una sola
 // verificación y va sobrado; este margen cubre el camino lento de respaldo.
 constexpr uint32_t kTaskWdtTimeoutSec = 30;
+
+// Reloj del sistema por SNTP (solo para TLS).
+//
+// mbedTLS únicamente valida las fechas del certificado del broker si el sistema
+// tiene la hora puesta; al arrancar, el ESP32 está en 1970 y las omite, o sea
+// aceptaría un certificado vencido o suplantado. SNTP da UTC real, que es justo
+// lo que necesita la validación.
+//
+// **No se usa el DS3231 a propósito.** El RTC guarda hora *local sin zona* (la
+// SPA envía `adjustDeviceTime` con la hora del navegador tal cual), así que
+// tomarlo como UTC dejaría el reloj corrido varias horas y el equipo podría
+// rechazar un certificado recién emitido por verlo "en el futuro". El DS3231
+// sigue siendo la fuente de los timestamps de la aplicación; ver
+// docs/RTC_USAGE.md.
+//
+// Interruptor de emergencia: ponlo en false y recompila para volver a validar
+// solo la cadena, sin fechas.
+constexpr bool kEnableNtpTimeSync = true;
+constexpr const char *kNtpServer1 = "pool.ntp.org";
+constexpr const char *kNtpServer2 = "time.google.com";
+// Cuánto se espera en setup() a que SNTP conteste antes de seguir sin hora.
+// Si no llega, el cliente SNTP sigue reintentando solo en segundo plano.
+constexpr uint32_t kNtpSyncTimeoutMs = 10000;
+// Umbral para considerar que el reloj ya está en hora (~2025-06-15).
+// Sirve para distinguir "hora real" del 1970 con el que arranca el ESP32.
+constexpr time_t kMinValidEpoch = 1750000000;
 
 // Anclas de confianza TLS del broker MQTT.
 //

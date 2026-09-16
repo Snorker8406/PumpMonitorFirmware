@@ -1,5 +1,7 @@
 #include "network_manager.hpp"
 
+#include <time.h>
+
 #include "eeprom_manager.hpp"
 #include "log.hpp"
 
@@ -115,4 +117,49 @@ void NetworkManager::handleEvent(WiFiEvent_t event) {
     default:
       break;
   }
+}
+
+bool NetworkManager::systemClockIsValid() {
+  return time(nullptr) > kMinValidEpoch;
+}
+
+void NetworkManager::beginTimeSync() {
+  if (timeSyncStarted_) {
+    return;
+  }
+  timeSyncStarted_ = true;
+
+  // Offset 0 y sin horario de verano: el reloj queda en UTC, que es contra lo
+  // que mbedTLS compara notBefore/notAfter del certificado del broker.
+  //
+  // IMPORTANTE: configTime() llama por dentro a sntp_stop()/sntp_init() de lwIP,
+  // que NO son thread-safe. Debe invocarse una sola vez, desde setup(), antes de
+  // crear las tareas; hacerlo desde una tarea con la red ya en uso corrompe el
+  // estado de lwIP y cuelga el handshake TLS.
+  configTime(0, 0, kNtpServer1, kNtpServer2);
+  LOGI("NTP: cliente iniciado (%s, %s)\n", kNtpServer1, kNtpServer2);
+}
+
+bool NetworkManager::waitForSystemClock(uint32_t timeoutMs) {
+  const uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    if (systemClockIsValid()) {
+      const time_t nowUtc = time(nullptr);
+      struct tm utc = {};
+      gmtime_r(&nowUtc, &utc);
+      LOGI("NTP: reloj en hora, %04d-%02d-%02d %02d:%02d:%02d UTC\n",
+           utc.tm_year + 1900, utc.tm_mon + 1, utc.tm_mday,
+           utc.tm_hour, utc.tm_min, utc.tm_sec);
+      return true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(250));
+  }
+
+  // Se continua sin hora: mbedTLS validara la cadena pero no las fechas, que es
+  // el comportamiento anterior a DEV.05. Es preferible a dejar el equipo
+  // incomunicado por no alcanzar un servidor NTP. El cliente SNTP sigue
+  // reintentando por su cuenta, asi que puede ponerse en hora mas adelante.
+  LOGW("NTP: sin hora tras %u ms; el certificado se validara sin fechas\n",
+       (unsigned)timeoutMs);
+  return false;
 }

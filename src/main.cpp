@@ -516,6 +516,14 @@ void setup() {
   const bool ethOk = NetworkManager::instance().begin();
   LOGI("%s\n", ethOk ? "Ethernet listo" : "Ethernet fallo al iniciar");
 
+  // Poner el reloj del sistema en hora antes de levantar MQTT: mbedTLS solo
+  // valida las fechas del certificado del broker si el sistema tiene hora.
+  // Va aquí, en setup(), con la red lista y antes de crear las tareas.
+  if (ethOk && kEnableNtpTimeSync) {
+    NetworkManager::instance().beginTimeSync();
+    NetworkManager::instance().waitForSystemClock();
+  }
+
   // Inicializar Modbus (syncRequest mode)
   ModbusManager::instance().begin();
 
