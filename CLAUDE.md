@@ -18,6 +18,7 @@ Placa **WT32-ETH01**: ESP32 + PHY Ethernet LAN8720 (sin WiFi en uso).
 | Ethernet LAN8720 | PHY addr 1, power 16, MDC 23, MDIO 18, clock `GPIO17_OUT` |
 | RTC DS3231 (I²C) | SDA 33, SCL 5 |
 | Tarjeta SD (SPI) | CS 2, MOSI 17, SCK 14, MISO 35 · 4 MHz |
+| LED testigo de estado | GPIO4, activo-alto · `docs/STATUS_LED.md` |
 
 Todo esto vive en `include/app_config.hpp`. No disperses pines ni constantes por
 el código.
@@ -76,6 +77,7 @@ definidos en `app_config.hpp`.
 | `RtcManager` | DS3231, timestamps Unix |
 | `EepromManager` | Configuración persistente en NVS (`Preferences`) |
 | `OtaManager` | Descarga e instalación de firmware |
+| `StatusLedManager` | LED testigo: estados de error en secuencias de parpadeo |
 
 ---
 

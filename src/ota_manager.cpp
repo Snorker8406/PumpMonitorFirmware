@@ -5,6 +5,7 @@
 
 #include "app_config.hpp"
 #include "log.hpp"
+#include "status_led_manager.hpp"
 
 namespace {
   // Cliente WiFi para la conexión HTTPS (global para acceso desde métodos privados)
@@ -25,6 +26,9 @@ void OtaManager::registerTasks(TaskHandle_t* taskHandles, size_t count) {
 }
 
 void OtaManager::suspendAllTasks() {
+  // Testigo en parpadeo rápido mientras las tareas estén detenidas: es el aviso
+  // de "no cortar alimentación". La tarea del LED no se suspende a propósito.
+  StatusLedManager::instance().setStatus(DeviceStatus::BusyMaintenance, true);
   LOGI("OTA: Suspending %u tasks...\n", taskCount_);
   for (size_t i = 0; i < taskCount_; i++) {
     if (registeredTasks_[i] != nullptr) {
@@ -35,6 +39,7 @@ void OtaManager::suspendAllTasks() {
 }
 
 void OtaManager::resumeAllTasks() {
+  StatusLedManager::instance().setStatus(DeviceStatus::BusyMaintenance, false);
   LOGI("OTA: Resuming %u tasks...\n", taskCount_);
   for (size_t i = 0; i < taskCount_; i++) {
     if (registeredTasks_[i] != nullptr) {

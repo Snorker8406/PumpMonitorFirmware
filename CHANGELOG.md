@@ -3,6 +3,48 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/).
 Rama de trabajo: `main`.
 
+## [DEV.09] — 2026-11-02
+
+### Added
+
+- **LED testigo de estado y error en GPIO4.** Un solo LED revela en qué estado
+  está el equipo con secuencias de parpadeo, legibles desde la puerta del
+  tablero sin laptop y sin red — que es justo cuando hace falta, porque lo que
+  suele fallar es la comunicación.
+
+  - `StatusLedManager` nuevo (`include/status_led_manager.hpp`,
+    `src/status_led_manager.cpp`): dueño único de `kStatusLedPin`, máscara
+    atómica de condiciones y tabla de patrones. `setStatus()` es segura desde
+    cualquier tarea.
+  - Tarea `status-led-task` (core 1, prioridad 1, stack 2048 words, tick 25 ms).
+  - Códigos: fijo = arrancando · parpadeo rápido = OTA/respaldo en curso ·
+    2 = sin Ethernet · 3 = sin broker MQTT · 4 = SD/RTC · 5 = Modbus ·
+    destello corto cada 3 s = operación normal. Arrancan en 2 destellos a
+    propósito: un grupo de 1 se confunde con el latido.
+  - Si hay varias condiciones activas se muestra **solo la más grave** (el orden
+    de `DeviceStatus` es la prioridad). El log de la SD sigue mostrando todas.
+  - Las condiciones son **estado, no eventos**: un fallo recuperado deja de
+    mostrarse solo. Cada una la reporta el dueño del recurso — `MqttDown` desde
+    `mqttTask` porque `PubSubClient` no es thread-safe, `ModbusFault` desde
+    `instantValuesTask` (la telemetría siempre activa, no Real Time), y
+    `BusyMaintenance` desde `OtaManager::suspendAllTasks()`/`resumeAllTasks()`,
+    que es el único punto por el que pasan tanto el OTA como la subida de
+    respaldo.
+  - La tarea del LED **no** se registra en `OtaManager::registerTasks()`:
+    durante una actualización es cuando el testigo tiene que seguir vivo.
+
+  **Por qué GPIO4:** el WT32-ETH01 solo saca 15 GPIO al header, 3 de ellos
+  solo-entrada, y el firmware ya ocupa 9. GPIO4 es el único libre sin rol de
+  strapping, flash, JTAG ni UART, y al reset queda flotante, así que el LED
+  arranca apagado por sí solo. Pines a evitar, alternativas y el cableado
+  recomendado (incluido el MOSFET/opto para un testigo en la puerta del
+  tablero): `docs/STATUS_LED.md`.
+
+  **Pendiente de hardware:** el firmware ya maneja el pin, pero el LED todavía
+  no está soldado en ningún equipo. Antes de hacerlo hay que verificar que
+  GPIO4 no esté cableado al `DI` de un MAX485 en el tablero (en el legacy era
+  `TXD2`).
+
 ## [DEV.08] — 2026-09-16
 
 ### Added

@@ -10,7 +10,7 @@
 constexpr char kDeviceHostname[] = "pump-monitor";
 
 // Firmware Version (fija en código)
-constexpr const char* kFirmwareVersion = "DEV.08";
+constexpr const char* kFirmwareVersion = "DEV.09";
 
 // Firmware OTA Configuration
 constexpr const char* kFirmwareBaseUrl = "https://pumpmonitor.agrotecsa.com.mx";
@@ -177,6 +177,43 @@ constexpr uint32_t kSdWritePeriodMs = 10000;  // Guardar cada 10 segundos
 // RTC DS3231 I2C
 constexpr int kRtcSdaPin = 33;
 constexpr int kRtcSclPin = 5;
+
+// ── LED testigo de estado / error ──
+//
+// Un solo LED que revela el estado del equipo con secuencias de parpadeo (ver
+// docs/STATUS_LED.md). GPIO4 es el único pin del header del WT32-ETH01 que
+// queda libre y no tiene rol de strapping, flash, JTAG ni UART: al reset queda
+// como entrada flotante, así que el LED arranca apagado antes de que corra
+// pinMode(). No muevas esto a GPIO0/2/12/15 sin leer el documento: son pines de
+// strapping y cambian el modo de arranque del ESP32.
+//
+// Cableado activo-alto (kStatusLedActiveLow = false):
+//   GPIO4 ──[330 Ω … 1 kΩ]──▶|── GND
+// Para un testigo en la puerta del tablero usa un MOSFET u optoacoplador y
+// alimenta el LED de la fuente del tablero; no cuelgues un cable largo del GPIO.
+constexpr int kStatusLedPin = 4;
+constexpr bool kStatusLedActiveLow = false;  // true si el LED va de 3V3 al pin
+
+// Base de tiempo del patrón. Todos los tiempos de abajo se redondean a un
+// múltiplo de este tick, que es también el periodo de la tarea.
+constexpr uint32_t kStatusLedTickMs = 25;
+
+// Grupo de destellos de los códigos de falla: N pulsos y una pausa larga.
+constexpr uint16_t kStatusLedPulseOnMs = 150;
+constexpr uint16_t kStatusLedPulseOffMs = 250;
+constexpr uint16_t kStatusLedGroupPauseMs = 1500;
+
+// Operación normal: un destello apenas perceptible cada pocos segundos, para
+// distinguir "todo bien" de "equipo sin alimentación".
+constexpr uint16_t kStatusLedHeartbeatOnMs = 50;
+constexpr uint16_t kStatusLedHeartbeatPauseMs = 2950;
+
+// OTA en curso: parpadeo rápido continuo (no apagar el equipo).
+constexpr uint16_t kStatusLedOtaBlinkMs = 100;
+
+constexpr uint32_t kStatusLedTaskStackWords = 2048;  // no publica MQTT ni escribe SD
+constexpr UBaseType_t kStatusLedTaskPriority = 1;
+constexpr BaseType_t kStatusLedTaskCore = APP_CPU_NUM;  // Core 1
 
 // Watchdog de tareas.
 //

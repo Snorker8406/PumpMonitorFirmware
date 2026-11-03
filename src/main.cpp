@@ -11,6 +11,7 @@
 #include "ota_manager.hpp"
 #include "actuator_manager.hpp"
 #include "modbus_server_manager.hpp"
+#include "status_led_manager.hpp"
 #include "log.hpp"
 
 // Forward declarations para funciones de control de Real Time
@@ -68,6 +69,30 @@ TaskHandle_t realTimeModbusTaskHandle = nullptr;
 TaskHandle_t instantValuesTaskHandle = nullptr;
 TaskHandle_t actuatorTaskHandle = nullptr;
 TaskHandle_t modbusServerTaskHandle = nullptr;
+TaskHandle_t statusLedTaskHandle = nullptr;
+
+// ----- Status LED task -----
+// Maneja el LED testigo y, de paso, muestrea las condiciones que son una simple
+// lectura de bandera (enlace Ethernet, SD, RTC). Las que exigen tocar hardware
+// o un cliente de red las reporta el dueño de ese recurso: MQTT en mqttTask,
+// Modbus en instantValuesTask, OTA/respaldo en OtaManager::suspendAllTasks().
+//
+// A propósito NO se registra en OtaManager::registerTasks: durante una
+// actualización es justo cuando el testigo tiene que seguir vivo.
+
+void statusLedTask(void *) {
+  auto &led = StatusLedManager::instance();
+  auto &net = NetworkManager::instance();
+  auto &sd = SdManager::instance();
+  auto &rtc = RtcManager::instance();
+
+  for (;;) {
+    led.setStatus(DeviceStatus::EthDown, !net.isConnected());
+    led.setStatus(DeviceStatus::StorageFault, !sd.isAvailable() || !rtc.isAvailable());
+    led.tick();
+    vTaskDelay(pdMS_TO_TICKS(kStatusLedTickMs));
+  }
+}
 
 // ----- Network monitor task -----
 
@@ -123,9 +148,15 @@ void mqttTask(void *) {
     if (net.isConnected()) {
       mqtt.ensureConnected();
       mqtt.loop();
+      // El estado del broker lo reporta esta tarea, que es la dueña del cliente
+      // MQTT: PubSubClient no es thread-safe y no se puede consultar desde la
+      // tarea del LED.
+      StatusLedManager::instance().setStatus(DeviceStatus::MqttDown, !mqtt.isConnected());
       vTaskDelay(pdMS_TO_TICKS(kMqttLoopDelayMs));
     } else {
       mqtt.disconnect();
+      // Sin red el testigo ya muestra EthDown, que tiene mayor prioridad.
+      StatusLedManager::instance().setStatus(DeviceStatus::MqttDown, false);
       vTaskDelay(pdMS_TO_TICKS(500));
     }
   }
@@ -329,6 +360,7 @@ void instantValuesTask(void *) {
       
       // Leer dispositivos Modbus (thread-safe internamente)
       bool readSuccess = modbus.readAllDevices(devicesData);
+      StatusLedManager::instance().setStatus(DeviceStatus::ModbusFault, !readSuccess);
       
       if (readSuccess) {
         recordsBuffer.clear();
@@ -500,6 +532,10 @@ void setup() {
   esp_task_wdt_init(kTaskWdtTimeoutSec, true);
   LOGI("Task watchdog: %u s\n", (unsigned)kTaskWdtTimeoutSec);
   
+  // LED testigo lo antes posible: queda encendido fijo mientras dura setup(),
+  // así se distingue "arrancando" de "sin alimentación".
+  StatusLedManager::instance().begin();
+
   // Inicializar EEPROM
   EepromManager::instance().begin();
   
@@ -597,8 +633,19 @@ void setup() {
       &modbusServerTaskHandle,
       kModbusServerTaskCore);
 
-  // Registrar tareas con OtaManager para suspenderlas durante actualizaciones
-  // No incluimos mqttTaskHandle porque esa tarea maneja el OTA
+  xTaskCreatePinnedToCore(
+      statusLedTask,
+      "status-led-task",
+      kStatusLedTaskStackWords,
+      nullptr,
+      kStatusLedTaskPriority,
+      &statusLedTaskHandle,
+      kStatusLedTaskCore);
+
+  // Registrar tareas con OtaManager para suspenderlas durante actualizaciones.
+  // Dos quedan fuera a propósito: mqttTaskHandle porque esa tarea maneja el OTA,
+  // y statusLedTaskHandle porque durante una actualización es justo cuando el
+  // testigo tiene que seguir parpadeando.
   TaskHandle_t tasksToSuspend[] = {
     networkTaskHandle,
     sdTaskHandle,
@@ -608,6 +655,9 @@ void setup() {
     modbusServerTaskHandle
   };
   OtaManager::instance().registerTasks(tasksToSuspend, sizeof(tasksToSuspend) / sizeof(tasksToSuspend[0]));
+
+  // Tareas arriba: el testigo pasa de encendido fijo al patrón que corresponda.
+  StatusLedManager::instance().setStatus(DeviceStatus::Booting, false);
 }
 
 void loop() {
