@@ -3,6 +3,43 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/).
 Rama de trabajo: `main`.
 
+## [DEV.10] — 2026-11-03
+
+### Added
+
+- **Comando MQTT `reset`.** El botón "Reiniciar dispositivo" de `devices.tsx`
+  publicaba `device/{MAC}/reset` desde siempre, pero el firmware no tenía
+  handler: el mensaje se registraba y se perdía en silencio al final de la
+  cadena `if / else if` de `MqttManager::messageCallback`. El dispositivo nunca
+  reiniciaba y el navegador se quedaba esperando hasta su timeout de 2 minutos.
+
+  - Rama nueva al final de la cadena (`strstr(topic, "/reset")`), colocada
+    última a propósito: ningún otro comando contiene `/reset` como subcadena ni
+    es contenido por él, así que no captura mensajes ajenos.
+  - El payload se ignora (el navegador publica vacío).
+  - **No publica ACK propio.** Al reconectar, `connectInternal()` ya publica
+    `PumpMonitorSystem/starting` con `mac` y `deviceTime`, que es exactamente lo
+    que `devices.tsx` empareja contra `expectedResetRef` para cerrar la espera.
+    Agregar un ACK antes del reinicio habría sido un segundo contrato para la
+    misma confirmación.
+
+### Changed
+
+- **Rastro de comandos sin handler.** La cadena de despacho termina ahora en un
+  `else` con `LOGW("MQTT: Unhandled command topic [%s]")`, que por el nivel WARN
+  queda también en `/error/err_YYYYMMDD.txt` de la SD. El canal MQTT no tiene
+  esquema ni validación, así que un topic mal escrito era indistinguible de un
+  handler que rechazó el payload. La suscripción es `device/{MAC}/#` y todas las
+  publicaciones del device usan `device/{MAC}_...`, nunca `device/{MAC}/...`, de
+  modo que el `else` no se dispara con los propios mensajes del firmware.
+- **`kMqttPreRestartDelayMs` (500 ms) en `app_config.hpp`.** Los tres
+  `delay(500)` que precedían a un `ESP.restart()` en `mqtt_manager.cpp`
+  (`saveNetworkConfig` DHCP, `saveNetworkConfig` IP fija y el cierre de
+  `backupUpload`) pasan a `vTaskDelay(pdMS_TO_TICKS(kMqttPreRestartDelayMs))`:
+  deja de ser un número mágico repetido y de bloquear con `delay()`. Los otros
+  dos `delay(500)` del archivo esperan liberación de memoria antes de OTA y
+  respaldo — otra semántica, se dejaron como estaban.
+
 ## [DEV.09] — 2026-11-02
 
 ### Added

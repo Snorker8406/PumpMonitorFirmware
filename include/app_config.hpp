@@ -10,7 +10,7 @@
 constexpr char kDeviceHostname[] = "pump-monitor";
 
 // Firmware Version (fija en código)
-constexpr const char* kFirmwareVersion = "DEV.09";
+constexpr const char* kFirmwareVersion = "DEV.10";
 
 // Firmware OTA Configuration
 constexpr const char* kFirmwareBaseUrl = "https://pumpmonitor.agrotecsa.com.mx";
@@ -55,6 +55,9 @@ constexpr BaseType_t kMqttTaskCore = PRO_CPU_NUM;  // Core 0
 constexpr uint32_t kMqttLoopDelayMs = 200;
 constexpr uint16_t kMqttMaxPacketSize = 1024;  // Aumentado de 256 default para Real Time mode
 constexpr const char *kMqttSystemTopic = "PumpMonitorSystem";
+// Margen antes de ESP.restart() para que el cliente MQTT alcance a vaciar su
+// buffer TLS y el broker reciba la ultima publicacion antes de perder el socket.
+constexpr uint32_t kMqttPreRestartDelayMs = 500;
 
 // Modbus TCP
 enum class ModbusRegisterType : uint8_t {

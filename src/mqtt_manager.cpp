@@ -273,7 +273,7 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     if (dhcpFlag == 1) {
       if (eeprom.setNetworkUseDhcp(true)) {
         LOGI("MQTT: Network config updated (DHCP). Restarting ESP to apply...\n");
-        delay(500);
+        vTaskDelay(pdMS_TO_TICKS(kMqttPreRestartDelayMs));
         ESP.restart();
       } else {
         LOGE("MQTT: Failed to update network config\n");
@@ -308,7 +308,7 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     if (ok) {
       LOGI("MQTT: Network config updated (Static %s). Restarting ESP to apply...\n",
            ip.toString().c_str());
-      delay(500);
+      vTaskDelay(pdMS_TO_TICKS(kMqttPreRestartDelayMs));
       ESP.restart();
     } else {
       LOGE("MQTT: Failed to update network config\n");
@@ -1005,6 +1005,22 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Failed to update RTC time\n");
     }
   }
+  // Procesar reset: reiniciar el dispositivo. El payload se ignora.
+  // No publica ACK propio: al reconectar, connectInternal() publica
+  // PumpMonitorSystem/starting con el MAC, que es la confirmacion que espera
+  // el navegador (devices.tsx) para cerrar su espera de reinicio.
+  else if (strstr(topic, "/reset") != nullptr) {
+    LOGI("MQTT: Reset requested via MQTT. Restarting ESP...\n");
+    vTaskDelay(pdMS_TO_TICKS(kMqttPreRestartDelayMs));
+    ESP.restart();
+  }
+  // Cualquier otro subtopic de device/{MAC}/# llego sin handler: el despacho
+  // es por strstr y el canal no tiene esquema, asi que dejar rastro es la
+  // unica forma de detectar un comando mal escrito o un consumidor
+  // desincronizado con el contrato.
+  else {
+    LOGW("MQTT: Unhandled command topic [%s]\n", topic);
+  }
 }
 
 bool MqttManager::connectInternal() {
@@ -1175,7 +1191,7 @@ void MqttManager::processPendingBackupUpload() {
   
   // Reiniciar el ESP para limpiar estado
   LOGI("MQTT: Restarting ESP after backup upload...\n");
-  delay(500);
+  vTaskDelay(pdMS_TO_TICKS(kMqttPreRestartDelayMs));
   ESP.restart();
 }
 
