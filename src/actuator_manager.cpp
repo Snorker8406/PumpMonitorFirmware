@@ -11,8 +11,10 @@ namespace {
 // Cada paso cambia un solo switch:
 //   000 -> 100 -> 110 -> 111 -> 011 -> 001 -> 000
 // Se puede avanzar (siguiente) o retroceder (anterior / "arrepentirse").
-//   - Llegar a 111 desde 110  -> escribe coil ON.
-//   - Llegar a 000 desde 001  -> escribe coil OFF.
+//   - Pedir 111 desde 110  -> escribe coil ON.
+//   - Pedir 000 desde 001  -> escribe coil OFF.
+// Esos dos pasos no mueven el switch: solo la confirmación del PLC (reg[0] del
+// Modbus Server) lleva el estado a 111 / 000.
 constexpr uint8_t kCycleLen = 6;
 constexpr bool kCycle[kCycleLen][3] = {
     {false, false, false},  // 000
@@ -69,6 +71,27 @@ void ActuatorManager::reloadConfig() {
     confirmRemoteOff_[i]      = eeprom.getActuatorConfirmRemoteOff(i);
   }
   LOGI("ActuatorManager config loaded (deviceIndex=%u)\n", (unsigned)modbusDeviceIndex_);
+  warnDuplicateConfirmValues();
+}
+
+void ActuatorManager::warnDuplicateConfirmValues() const {
+  const uint8_t* const tables[] = {confirmManualOn_, confirmManualOff_,
+                                   confirmRemoteOn_, confirmRemoteOff_};
+  constexpr size_t kTableCount = sizeof(tables) / sizeof(tables[0]);
+  constexpr size_t kValueCount = kTableCount * kActuatorCoilCount;
+
+  for (size_t a = 0; a < kValueCount; a++) {
+    uint8_t value = tables[a % kTableCount][a / kTableCount];
+    if (value == kActuatorConfirmValueUnset) {
+      continue;
+    }
+    for (size_t b = a + 1; b < kValueCount; b++) {
+      if (tables[b % kTableCount][b / kTableCount] == value) {
+        LOGW("Actuator config: valor de confirmacion %u repetido (coil %u y coil %u)\n",
+             (unsigned)value, (unsigned)(a / kTableCount), (unsigned)(b / kTableCount));
+      }
+    }
+  }
 }
 
 bool ActuatorManager::confirmationsEnabled(size_t coilIndex) const {
@@ -107,8 +130,12 @@ void ActuatorManager::setConfirmation(size_t coilIndex, uint8_t confirmIndex, bo
   bool applied = false;
   bool triggerOn = false;
   bool triggerOff = false;
+  const bool awaiting = awaitingConfirm_[coilIndex];
 
-  if (sameState(next, cur)) {
+  if (awaiting) {
+    // La escritura ya salió o está en cola: ni repetirla ni retroceder a media
+    // operación. Se resuelve con la confirmación, el fallo de escritura o el timeout.
+  } else if (sameState(next, cur)) {
     // Sin cambio real (idempotente): se acepta sin disparar nada.
     applied = true;
   } else {
@@ -128,23 +155,24 @@ void ActuatorManager::setConfirmation(size_t coilIndex, uint8_t confirmIndex, bo
                       (nextPos == (curPos + kCycleLen - 1) % kCycleLen);
     bool adjacent = forwardOnly ? isForward : (isForward || isBackward);
     if (adjacent) {
-      confirm_[coilIndex][confirmIndex] = value;
       applied = true;
 
       // Disparo de escritura (solo con confirmaciones activas).
       if (confirmationsEnabled_[coilIndex]) {
         // 110 -> 111  => ON
-        if (next[0] && next[1] && next[2] && cur[0] && cur[1] && !cur[2]) {
-          pendingWrite_[coilIndex] = true;
-          pendingValue_[coilIndex] = true;
-          triggerOn = true;
-        }
+        triggerOn = next[0] && next[1] && next[2] && cur[0] && cur[1] && !cur[2];
         // 001 -> 000  => OFF
-        else if (!next[0] && !next[1] && !next[2] && !cur[0] && !cur[1] && cur[2]) {
-          pendingWrite_[coilIndex] = true;
-          pendingValue_[coilIndex] = false;
-          triggerOff = true;
-        }
+        triggerOff = !next[0] && !next[1] && !next[2] && !cur[0] && !cur[1] && cur[2];
+      }
+
+      if (triggerOn || triggerOff) {
+        // El switch no se mueve: el estado final lo fija la confirmación del PLC.
+        pendingWrite_[coilIndex] = true;
+        pendingValue_[coilIndex] = triggerOn;
+        awaitingConfirm_[coilIndex] = true;
+        awaitTicks_[coilIndex] = 0;
+      } else {
+        confirm_[coilIndex][confirmIndex] = value;
       }
     }
   }
@@ -159,8 +187,9 @@ void ActuatorManager::setConfirmation(size_t coilIndex, uint8_t confirmIndex, bo
   xSemaphoreGive(mutex_);
 
   if (!applied) {
-    LOGW("Actuator coil %u confirm[%u]=%u RECHAZADO (paso no secuencial, estado %s)\n",
-         (unsigned)coilIndex, (unsigned)confirmIndex, value ? 1 : 0, states);
+    LOGW("Actuator coil %u confirm[%u]=%u RECHAZADO (%s, estado %s)\n",
+         (unsigned)coilIndex, (unsigned)confirmIndex, value ? 1 : 0,
+         awaiting ? "esperando confirmacion" : "paso no secuencial", states);
   } else {
     const char* trig = triggerOn ? " -> WRITE ON QUEUED"
                                  : (triggerOff ? " -> WRITE OFF QUEUED" : "");
@@ -169,8 +198,9 @@ void ActuatorManager::setConfirmation(size_t coilIndex, uint8_t confirmIndex, bo
   }
 
   // Publicar estado del coil: "index,estados" (ej: "1,110").
-  // Se omite la publicación SOLO cuando se disparó la escritura Modbus, porque
-  // en esos casos el servidor recibe la confirmación vía el coil:
+  // Se omite la publicación SOLO cuando se disparó la escritura Modbus: el estado
+  // no cambió y el cliente sigue esperando el resultado, que llega como 111 / 000
+  // con la confirmación o como 110 / 001 si falla o vence el timeout:
   //   - 110 -> 111 (arranque, triggerOn)
   //   - 001 -> 000 (paro, triggerOff)
   // Si se llega a 111/000 por retroceso ("arrepentirse"), NO se dispara Modbus
@@ -210,6 +240,23 @@ void ActuatorManager::publishStatus(const char* name, const char* payload) {
   char topic[64];
   snprintf(topic, sizeof(topic), "device/%s_var/%s", macNoColon, name);
   MqttManager::instance().publish(topic, payload);
+}
+
+void ActuatorManager::publishCoilStatus(size_t coilIndex) {
+  if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    LOGE("publishCoilStatus: mutex timeout\n");
+    return;
+  }
+  char states[kActuatorConfirmCount + 1];
+  for (uint8_t c = 0; c < kActuatorConfirmCount; c++) {
+    states[c] = confirm_[coilIndex][c] ? '1' : '0';
+  }
+  states[kActuatorConfirmCount] = '\0';
+  xSemaphoreGive(mutex_);
+
+  char payload[24];
+  snprintf(payload, sizeof(payload), "%u,%s", (unsigned)coilIndex, states);
+  publishStatus("coilStatus", payload);
 }
 
 void ActuatorManager::publishAllStatus() {
@@ -277,6 +324,7 @@ bool ActuatorManager::initializeFromAlarms() {
       confirm_[i][c] = on;  // 111 si la alarma=1, 000 si la alarma=0
     }
     pendingWrite_[i] = false;  // garantizar que no quede una escritura pendiente
+    awaitingConfirm_[i] = false;
 
     char states[kActuatorConfirmCount + 1];
     for (uint8_t c = 0; c < kActuatorConfirmCount; c++) {
@@ -300,6 +348,10 @@ bool ActuatorManager::initializeFromAlarms() {
 }
 
 void ActuatorManager::handleConfirmationValue(uint16_t value) {
+  if (value == kActuatorConfirmValueUnset) {
+    return;
+  }
+
   // Buscar a qué coil y acción corresponde el valor (los valores son únicos por coil).
   int coilIndex = -1;
   bool on = false;
@@ -328,6 +380,7 @@ void ActuatorManager::handleConfirmationValue(uint16_t value) {
     confirm_[coilIndex][c] = on;
   }
   pendingWrite_[coilIndex] = false;
+  awaitingConfirm_[coilIndex] = false;
 
   char states[kActuatorConfirmCount + 1];
   for (uint8_t c = 0; c < kActuatorConfirmCount; c++) {
@@ -363,6 +416,7 @@ void ActuatorManager::process() {
     //   true  = secuencia de ARRANQUE (111)
     //   false = secuencia de PARO     (000)
     bool isOnSequence = false;
+    bool confirmTimedOut = false;
 
     if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) != pdTRUE) {
       continue;
@@ -371,8 +425,19 @@ void ActuatorManager::process() {
       doWrite = true;
       isOnSequence = pendingValue_[i];
       pendingWrite_[i] = false;
+    } else if (awaitingConfirm_[i] && ++awaitTicks_[i] >= kActuatorConfirmTimeoutTicks) {
+      awaitingConfirm_[i] = false;
+      confirmTimedOut = true;
+      isOnSequence = pendingValue_[i];
     }
     xSemaphoreGive(mutex_);
+
+    if (confirmTimedOut) {
+      LOGW("Actuator coil %u (%s) sin confirmacion tras %lu ms: se desbloquea sin cambiar estado\n",
+           (unsigned)i, isOnSequence ? "ON" : "OFF", (unsigned long)kActuatorConfirmTimeoutMs);
+      publishCoilStatus(i);
+      continue;
+    }
 
     if (!doWrite) {
       continue;
@@ -390,10 +455,22 @@ void ActuatorManager::process() {
     if (ok) {
       LOGI("Actuator coil %u (%s addr %u val %u) OK\n", (unsigned)i,
            isOnSequence ? "ON" : "OFF", address, writeVal ? 1 : 0);
-      // Los switches conservan su estado (representan la posición en la secuencia).
+      // El timeout de la confirmación empieza a contar en el siguiente ciclo.
     } else {
       LOGE("Actuator coil %u (%s addr %u) write FAILED\n", (unsigned)i,
            isOnSequence ? "ON" : "OFF", address);
+
+      // Sin escritura no hay confirmación que esperar. Una escritura directa (setCoil)
+      // no tiene espera; si ya llegó una confirmación, el estado ya se publicó.
+      bool wasAwaiting = false;
+      if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        wasAwaiting = awaitingConfirm_[i];
+        awaitingConfirm_[i] = false;
+        xSemaphoreGive(mutex_);
+      }
+      if (wasAwaiting) {
+        publishCoilStatus(i);
+      }
     }
   }
 }

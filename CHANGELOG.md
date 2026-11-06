@@ -3,6 +3,38 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/).
 Rama de trabajo: `main`.
 
+## [DEV.11] — 2026-11-05
+
+### Fixed
+
+- **`111` / `000` ya no se alcanzan sin la confirmación del PLC.** `setConfirmation`
+  movía el último switch antes de escribir el coil, así que el device reportaba
+  arranque o paro aunque la escritura fallara o el PLC nunca confirmara. Además, como
+  no se publicaba `coilStatus`, la UI seguía en `110` y un segundo clic entraba como
+  idempotente y publicaba `1,111` sin escribir nada.
+
+  - El último paso (`110` → `111`, `001` → `000`) encola la escritura y deja el estado
+    en `110` / `001`. Solo `handleConfirmationValue` lleva a `111` / `000`.
+  - Mientras espera, se rechaza cualquier `confirmCoil` de ese coil: ni doble
+    escritura ni retroceso a media operación. La espera se marca al encolar para que
+    un FC06 inmediato no se adelante.
+  - Si `writeCoil` falla o vence `kActuatorConfirmTimeoutMs` (30 s), el coil se
+    desbloquea sin cambiar de estado y se republica `coilStatus`. Una confirmación
+    tardía se aplica igual.
+
+  Topics y payloads no cambian; cambia la semántica de `111` / `000`
+  (`../docs/CONTRATO_MQTT.md` §3.4). SPA y app móvil funcionan sin cambios: el spinner
+  se libera a los 5 s, y si la confirmación tarda más el firmware rechaza el reintento.
+
+### Changed
+
+- **`reg[0] = 0` ya no confirma ningún coil** (`kActuatorConfirmValueUnset`): el backend
+  manda `0` en los slots vacíos, así que un PLC que limpiara el registro habría
+  confirmado ese coil.
+- **Aviso de valores de confirmación repetidos.** `reloadConfig` registra un `WARN` si
+  un valor se repite: `handleConfirmationValue` resuelve el coil por valor y gana el
+  primero que coincide. Solo avisa; no rechaza la configuración.
+
 ## [DEV.10] — 2026-11-03
 
 ### Added

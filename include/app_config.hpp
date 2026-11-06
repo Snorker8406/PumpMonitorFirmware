@@ -10,7 +10,7 @@
 constexpr char kDeviceHostname[] = "pump-monitor";
 
 // Firmware Version (fija en código)
-constexpr const char* kFirmwareVersion = "DEV.10";
+constexpr const char* kFirmwareVersion = "DEV.11";
 
 // Firmware OTA Configuration
 constexpr const char* kFirmwareBaseUrl = "https://pumpmonitor.agrotecsa.com.mx";
@@ -134,6 +134,14 @@ constexpr uint32_t kActuatorTaskStackWords = 4096;
 constexpr UBaseType_t kActuatorTaskPriority = 1;
 constexpr BaseType_t kActuatorTaskCore = APP_CPU_NUM;  // Core 1
 constexpr uint32_t kActuatorTaskPeriodMs = 100;        // Periodo de evaluación de escrituras pendientes
+// Espera máxima del FC06 de confirmación tras escribir el coil. Al vencer solo se
+// desbloquea el coil (reintentar o retroceder): una confirmación tardía se aplica igual.
+// Debe superar el tiempo máximo de arranque del equipo.
+constexpr uint32_t kActuatorConfirmTimeoutMs = 30000;
+constexpr uint32_t kActuatorConfirmTimeoutTicks = kActuatorConfirmTimeoutMs / kActuatorTaskPeriodMs;
+// Valor de confirmación que significa "sin configurar": el backend lo manda en los slots
+// vacíos, así que un 0 escrito en reg[0] nunca confirma un coil.
+constexpr uint8_t kActuatorConfirmValueUnset = 0;
 
 // ── Alarmas (lectura de Coils/booleanos por Modbus) ──
 // Lee un rango de coils (FC01) de un dispositivo Modbus y publica el estado por
