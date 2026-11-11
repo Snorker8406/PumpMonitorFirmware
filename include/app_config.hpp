@@ -139,6 +139,16 @@ constexpr uint32_t kActuatorTaskPeriodMs = 100;        // Periodo de evaluación
 // Debe superar el tiempo máximo de arranque del equipo.
 constexpr uint32_t kActuatorConfirmTimeoutMs = 30000;
 constexpr uint32_t kActuatorConfirmTimeoutTicks = kActuatorConfirmTimeoutMs / kActuatorTaskPeriodMs;
+// Reintentos de la sincronización inicial desde alarmas (initializeFromAlarms).
+// Si la lectura falla (device recién dado de alta sin esclavos Modbus reales,
+// dirección ilegal, esclavo apagado) se reintenta con espera exponencial
+// min -> max en lugar de cada kActuatorTaskPeriodMs: así no se satura el log de
+// la SD ni se acapara el mutex Modbus (cada timeout lo retiene kModbusTimeoutMs).
+// Un cambio de alarmConfig o saveModbusDevices vía MQTT reinicia la espera.
+constexpr uint32_t kActuatorInitRetryMinMs = 5000;
+constexpr uint32_t kActuatorInitRetryMaxMs = 300000;  // 5 min
+constexpr uint32_t kActuatorInitRetryMinTicks = kActuatorInitRetryMinMs / kActuatorTaskPeriodMs;
+constexpr uint32_t kActuatorInitRetryMaxTicks = kActuatorInitRetryMaxMs / kActuatorTaskPeriodMs;
 // Valor de confirmación que significa "sin configurar": el backend lo manda en los slots
 // vacíos, así que un 0 escrito en reg[0] nunca confirma un coil.
 constexpr uint8_t kActuatorConfirmValueUnset = 0;

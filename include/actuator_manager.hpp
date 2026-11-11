@@ -58,6 +58,17 @@ class ActuatorManager {
   // tuvo éxito. Llamar una vez al arranque cuando las conexiones estén listas.
   bool initializeFromAlarms();
 
+  // Pide a la task del actuador que reintente initializeFromAlarms() sin esperar
+  // al backoff en curso (y que lo repita aunque ya se hubiera completado, porque
+  // el rango de alarmas o los esclavos cambiaron). Llamar tras alarmConfig /
+  // saveModbusDevices. takeInitRetryRequest() lo consume la task.
+  void requestInitRetry() { initRetryRequested_ = true; }
+  bool takeInitRetryRequest() {
+    if (!initRetryRequested_) return false;
+    initRetryRequested_ = false;
+    return true;
+  }
+
   // Procesa un valor de confirmación recibido en reg[0] del Modbus Server.
   // Si el valor coincide con ConfirmManualON/ConfirmManualOFF/ConfirmRemoteON/
   // ConfirmRemoteOFF de alguna coil, fuerza sus switches a 111 (ON) o 000 (OFF),
@@ -82,6 +93,9 @@ class ActuatorManager {
 
   SemaphoreHandle_t mutex_{nullptr};
   volatile bool confirmationsEnabled_[kActuatorCoilCount]{};
+  // Escrito por la task MQTT, leído por la task del actuador. Un bool alineado es
+  // atómico en el ESP32; perder una carrera solo adelanta o atrasa un reintento.
+  volatile bool initRetryRequested_{false};
 
   // Configuración cargada desde EEPROM.
   uint16_t coilOnAddresses_[kActuatorCoilCount]{};

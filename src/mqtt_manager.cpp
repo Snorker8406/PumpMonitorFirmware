@@ -193,6 +193,8 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     if (parsed >= 5) {
       ok &= eeprom.setAlarmCoilsTypes(coilsTypes);
     }
+    // Aun con rechazo parcial algún campo pudo cambiar: resincronizar actuadores.
+    ActuatorManager::instance().requestInitRetry();
     if (ok) {
       LOGI("MQTT: Alarm config updated (dev=%u start=%u count=%u func=%s types=%s)\n",
            devIdx, startAddr, count,
@@ -570,6 +572,8 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       // setModbusDevices borra los anteriores, persiste en EEPROM y refresca el array en RAM.
       if (eeprom.setModbusDevices(devs, count)) {
         LOGI("MQTT: Modbus devices refreshed (%u)\n", (unsigned)count);
+        // Los esclavos cambiaron: resincronizar actuadores desde las alarmas.
+        ActuatorManager::instance().requestInitRetry();
       } else {
         LOGE("MQTT: Failed to persist Modbus devices\n");
       }

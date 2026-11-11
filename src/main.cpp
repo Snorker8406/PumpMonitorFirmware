@@ -479,15 +479,35 @@ void actuatorTask(void *) {
   // Inicialización única: al arrancar/reiniciar, en cuanto existan las conexiones
   // necesarias (ETH + MQTT), leer las alarmas y sincronizar el estado de cada
   // actuador (switches 111/000 según su confirmAlarmIndex) publicando el estado
-  // real. Se reintenta hasta lograr una lectura de alarmas exitosa.
+  // real. Si la lectura falla se reintenta con espera exponencial
+  // (kActuatorInitRetryMinMs..MaxMs), contada en ciclos de esta task; un cambio
+  // de configuración por MQTT (requestInitRetry) fuerza un intento inmediato.
   bool initDone = false;
+  uint32_t initWaitTicks = 0;                          // ciclos hasta el próximo intento
+  uint32_t initBackoffTicks = kActuatorInitRetryMinTicks;
 
   for (;;) {
+    if (actuator.takeInitRetryRequest()) {
+      initDone = false;
+      initWaitTicks = 0;
+      initBackoffTicks = kActuatorInitRetryMinTicks;
+    }
+
     if (net.isConnected()) {
       if (!initDone && mqtt.isConnected()) {
-        if (actuator.initializeFromAlarms()) {
+        if (initWaitTicks > 0) {
+          initWaitTicks--;
+        } else if (actuator.initializeFromAlarms()) {
           initDone = true;
+          initBackoffTicks = kActuatorInitRetryMinTicks;
           LOGI("ActuatorInit: actuadores inicializados desde el estado de alarmas\n");
+        } else {
+          initWaitTicks = initBackoffTicks;
+          LOGW("ActuatorInit: siguiente intento en %u s\n",
+               (unsigned)(initBackoffTicks * kActuatorTaskPeriodMs / 1000));
+          initBackoffTicks = (initBackoffTicks >= kActuatorInitRetryMaxTicks / 2)
+                               ? kActuatorInitRetryMaxTicks
+                               : initBackoffTicks * 2;
         }
       }
       actuator.process();

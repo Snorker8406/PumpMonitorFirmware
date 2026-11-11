@@ -3,6 +3,24 @@
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/).
 Rama de trabajo: `main`.
 
+## [Unreleased]
+
+### Fixed
+
+- **La sincronización inicial de actuadores ya no reintenta cada 100 ms.** En un
+  device recién dado de alta (esclavos Modbus de la semilla, sin equipo real detrás)
+  `initializeFromAlarms` fallaba y `actuatorTask` lo repetía en cada ciclo: log y
+  archivo de errores de la SD saturados, y el mutex Modbus acaparado hasta
+  `kModbusTimeoutMs` por intento cuando el esclavo no responde.
+
+  - Tras un fallo se espera con backoff exponencial de `kActuatorInitRetryMinMs`
+    (5 s) a `kActuatorInitRetryMaxMs` (5 min), contado en ciclos de la task.
+  - `alarmConfig` y `saveModbusDevices` llaman a `requestInitRetry()`: intento
+    inmediato y la espera vuelve al mínimo. También repiten la sincronización si ya
+    se había completado, porque cambió el rango de alarmas o los esclavos.
+
+  Topics y payloads no cambian.
+
 ## [DEV.11] — 2026-11-05
 
 ### Fixed
