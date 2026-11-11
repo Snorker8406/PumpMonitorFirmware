@@ -36,6 +36,16 @@ static const IPAddress kStaticGateway(192, 168, 1, 254);
 static const IPAddress kStaticSubnet(255, 255, 255, 0);
 static const IPAddress kStaticDns(8, 8, 8, 8);
 
+// Respaldo a DHCP cuando la IP fija no funciona.
+//
+// Una IP fija mal puesta por MQTT (ocupada, de otra red, gateway equivocado)
+// deja el equipo sin broker, y sin broker no hay forma remota de corregirla.
+// Si con IP fija el device no logra conectar al broker en este tiempo (contado
+// solo con el enlace Ethernet arriba) se reinicia UNA vez en DHCP sin tocar la
+// EEPROM. Si en DHCP tampoco conecta, vuelve a la IP fija y ya no reintenta
+// hasta el siguiente arranque en frío. Ver NetworkManager::superviseStaticIp.
+constexpr uint32_t kNetStaticFallbackTimeoutMs = 600000;  // 10 min
+
 // Task sizing
 constexpr uint32_t kNetworkTaskStackWords = 4096;
 constexpr UBaseType_t kNetworkTaskPriority = 1;

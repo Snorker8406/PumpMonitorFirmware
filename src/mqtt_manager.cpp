@@ -272,6 +272,8 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
       LOGE("MQTT: Invalid networkConfig format. Expected: 1 (DHCP) or 0,ip[,gateway[,subnet[,dns]]]\n");
       return;
     }
+    // Configuración nueva: el respaldo a DHCP vuelve a estar disponible para ella.
+    NetworkManager::instance().resetStaticFallback();
     if (dhcpFlag == 1) {
       if (eeprom.setNetworkUseDhcp(true)) {
         LOGI("MQTT: Network config updated (DHCP). Restarting ESP to apply...\n");
@@ -318,7 +320,9 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
   }
   // Procesar getNetworkConfig: devolver la configuración de red actual
   // Response topic: device/{MAC}_var/networkConfig
-  // Payload: useDhcp,ip,gateway,subnet,dns,currentIp
+  // Payload: useDhcp,ip,gateway,subnet,dns,currentIp,dhcpFallback
+  //   dhcpFallback = 1 si la EEPROM pide IP fija pero este arranque usa el DHCP
+  //   de respaldo porque con la IP fija no se alcanzó el broker.
   else if (strstr(topic, "/getNetworkConfig") != nullptr) {
     const char *macColoned = NetworkManager::instance().macString();
     char macNoColon[13] = {0};
@@ -328,13 +332,14 @@ void MqttManager::messageCallback(char* topic, byte* payload, unsigned int lengt
     }
 
     char netBuf[96];
-    snprintf(netBuf, sizeof(netBuf), "%u,%s,%s,%s,%s,%s",
+    snprintf(netBuf, sizeof(netBuf), "%u,%s,%s,%s,%s,%s,%u",
              eeprom.getNetworkUseDhcp() ? 1 : 0,
              eeprom.getNetworkStaticIp().toString().c_str(),
              eeprom.getNetworkGateway().toString().c_str(),
              eeprom.getNetworkSubnet().toString().c_str(),
              eeprom.getNetworkDns().toString().c_str(),
-             NetworkManager::instance().localIP().toString().c_str());
+             NetworkManager::instance().localIP().toString().c_str(),
+             NetworkManager::instance().dhcpFallbackActive() ? 1u : 0u);
 
     char responseTopic[64];
     snprintf(responseTopic, sizeof(responseTopic), "device/%s_var/networkConfig", macNoColon);

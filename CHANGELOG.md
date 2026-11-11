@@ -5,6 +5,23 @@ Rama de trabajo: `main`.
 
 ## [Unreleased]
 
+### Added
+
+- **Respaldo a DHCP cuando la IP fija no llega al broker.** Una IP fija equivocada
+  enviada por `saveNetworkConfig` dejaba el equipo sin broker, y sin broker no hay forma
+  remota de corregirla.
+  - `NetworkManager::superviseStaticIp`, llamado desde `mqttTask`: con IP fija, si no se
+    conecta nunca al broker en `kNetStaticFallbackTimeoutMs` (10 min de enlace arriba;
+    con el cable desconectado no cuenta), reinicia en DHCP **sin tocar la EEPROM**.
+  - Si con DHCP alcanza el broker, se queda así hasta el próximo reinicio, que vuelve a
+    probar la IP fija. Si tampoco conecta, regresa a la IP fija y no reintenta hasta un
+    arranque en frío: como mucho dos reinicios por encendido, para no reiniciar en bucle
+    durante una caída del broker.
+  - El estado cruza `ESP.restart()` en memoria RTC (`RTC_NOINIT_ATTR`, validado con
+    firma y descartado en el reset por encendido). `saveNetworkConfig` lo rearma.
+  - `getNetworkConfig` añade un 7.º campo `dhcpFallback` (`0`/`1`). El backend lo lee si
+    viene y lo ignora si no, así que es compatible en ambos sentidos.
+
 ### Fixed
 
 - **La sincronización inicial de actuadores ya no reintenta cada 100 ms.** En un

@@ -151,10 +151,14 @@ void mqttTask(void *) {
       // El estado del broker lo reporta esta tarea, que es la dueña del cliente
       // MQTT: PubSubClient no es thread-safe y no se puede consultar desde la
       // tarea del LED.
-      StatusLedManager::instance().setStatus(DeviceStatus::MqttDown, !mqtt.isConnected());
+      const bool brokerUp = mqtt.isConnected();
+      StatusLedManager::instance().setStatus(DeviceStatus::MqttDown, !brokerUp);
+      net.superviseStaticIp(brokerUp);
       vTaskDelay(pdMS_TO_TICKS(kMqttLoopDelayMs));
     } else {
       mqtt.disconnect();
+      // Enlace arriba sin IP (DHCP de respaldo sin servidor) también cuenta.
+      net.superviseStaticIp(false);
       // Sin red el testigo ya muestra EthDown, que tiene mayor prioridad.
       StatusLedManager::instance().setStatus(DeviceStatus::MqttDown, false);
       vTaskDelay(pdMS_TO_TICKS(500));

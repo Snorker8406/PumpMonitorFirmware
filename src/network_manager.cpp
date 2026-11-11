@@ -1,5 +1,7 @@
 #include "network_manager.hpp"
 
+#include <esp_attr.h>
+#include <esp_system.h>
 #include <time.h>
 
 #include "eeprom_manager.hpp"
@@ -7,6 +9,36 @@
 
 namespace {
 NetworkManager *g_instance = nullptr;
+
+// Estado del respaldo DHCP que sobrevive a ESP.restart() (memoria RTC sin
+// inicializar). En un arranque en frío su contenido es basura: se valida con
+// la firma y además se descarta si el reset fue por encendido.
+enum class StaticFallbackStage : uint8_t {
+  Armed = 0,         // IP fija normal; si no llega al broker, probar DHCP
+  BootDhcp = 1,      // el próximo arranque (o el actual) usa DHCP de respaldo
+  Exhausted = 2,     // el DHCP de respaldo tampoco sirvió: IP fija sin más reintentos
+};
+constexpr uint32_t kFallbackMagic = 0x4E455446;  // "NETF"
+
+struct FallbackState {
+  uint32_t magic;
+  StaticFallbackStage stage;
+};
+RTC_NOINIT_ATTR FallbackState s_fallback;
+
+StaticFallbackStage loadFallbackStage() {
+  if (esp_reset_reason() == ESP_RST_POWERON || s_fallback.magic != kFallbackMagic ||
+      static_cast<uint8_t>(s_fallback.stage) > static_cast<uint8_t>(StaticFallbackStage::Exhausted)) {
+    s_fallback.magic = kFallbackMagic;
+    s_fallback.stage = StaticFallbackStage::Armed;
+  }
+  return s_fallback.stage;
+}
+
+void storeFallbackStage(StaticFallbackStage stage) {
+  s_fallback.magic = kFallbackMagic;
+  s_fallback.stage = stage;
+}
 
 const char *formatMac() {
   static char macStr[18];
@@ -38,7 +70,21 @@ bool NetworkManager::begin(uint32_t timeoutMs) {
   // red no existe y el stop del cliente DHCP falla ("dhcp client stop called
   // with NULL api"), dejando activo el DHCP.
   auto &eeprom = EepromManager::instance();
-  if (!eeprom.getNetworkUseDhcp()) {
+  const StaticFallbackStage stage = loadFallbackStage();
+  staticConfigured_ = !eeprom.getNetworkUseDhcp();
+
+  if (!staticConfigured_) {
+    storeFallbackStage(StaticFallbackStage::Armed);
+  } else if (stage == StaticFallbackStage::BootDhcp) {
+    // La IP fija no alcanzó el broker en el arranque anterior. La EEPROM no se
+    // toca: el siguiente reinicio vuelve a intentar la IP fija.
+    dhcpFallbackActive_ = true;
+  }
+
+  if (dhcpFallbackActive_) {
+    LOGW("ETH: IP fija %s sin broker en el arranque anterior; usando DHCP de respaldo\n",
+         eeprom.getNetworkStaticIp().toString().c_str());
+  } else if (staticConfigured_) {
     IPAddress ip = eeprom.getNetworkStaticIp();
     IPAddress gateway = eeprom.getNetworkGateway();
     IPAddress subnet = eeprom.getNetworkSubnet();
@@ -72,6 +118,58 @@ bool NetworkManager::begin(uint32_t timeoutMs) {
 
 bool NetworkManager::isConnected() const {
   return connected_;
+}
+
+void NetworkManager::resetStaticFallback() {
+  storeFallbackStage(StaticFallbackStage::Armed);
+}
+
+void NetworkManager::superviseStaticIp(bool brokerConnected) {
+  const TickType_t now = xTaskGetTickCount();
+  const TickType_t delta = (lastSuperviseTick_ == 0) ? 0 : (now - lastSuperviseTick_);
+  lastSuperviseTick_ = now;
+
+  if (!staticConfigured_ || brokerReached_) {
+    return;
+  }
+
+  if (brokerConnected) {
+    brokerReached_ = true;
+    // Con IP fija: rearmar para futuros reinicios. Con el DHCP de respaldo
+    // también: el próximo reinicio vuelve a probar la IP fija desde cero.
+    storeFallbackStage(StaticFallbackStage::Armed);
+    if (dhcpFallbackActive_) {
+      LOGW("ETH: broker alcanzado con DHCP de respaldo (IP %s). Corrige la IP fija por saveNetworkConfig\n",
+           localIP().toString().c_str());
+    }
+    return;
+  }
+
+  // Sin enlace no hay nada que diagnosticar (cable, switch apagado): no cuenta.
+  if (!linkUp_) {
+    return;
+  }
+  linkUpTicks_ += delta;
+  if (linkUpTicks_ < pdMS_TO_TICKS(kNetStaticFallbackTimeoutMs)) {
+    return;
+  }
+
+  if (dhcpFallbackActive_) {
+    LOGE("ETH: DHCP de respaldo tampoco alcanzó el broker; volviendo a IP fija sin más reintentos\n");
+    storeFallbackStage(StaticFallbackStage::Exhausted);
+  } else if (s_fallback.stage == StaticFallbackStage::Armed) {
+    LOGE("ETH: IP fija sin broker tras %u s de enlace; reiniciando en DHCP de respaldo\n",
+         (unsigned)(kNetStaticFallbackTimeoutMs / 1000));
+    storeFallbackStage(StaticFallbackStage::BootDhcp);
+  } else {
+    // Exhausted: ya se probó el respaldo en este arranque en frío.
+    brokerReached_ = true;  // dejar de supervisar
+    return;
+  }
+
+  // Margen para que el LOGE llegue a la SD antes del reinicio.
+  vTaskDelay(pdMS_TO_TICKS(kMqttPreRestartDelayMs));
+  ESP.restart();
 }
 
 bool NetworkManager::hasLink() const {
