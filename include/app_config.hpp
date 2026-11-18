@@ -10,7 +10,7 @@
 constexpr char kDeviceHostname[] = "pump-monitor";
 
 // Firmware Version (fija en código)
-constexpr const char* kFirmwareVersion = "DEV.11";
+constexpr const char* kFirmwareVersion = "DEV.12";
 
 // Firmware OTA Configuration
 constexpr const char* kFirmwareBaseUrl = "https://pumpmonitor.agrotecsa.com.mx";

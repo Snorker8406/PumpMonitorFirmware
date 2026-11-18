@@ -5,6 +5,8 @@ Rama de trabajo: `main`.
 
 ## [Unreleased]
 
+## [DEV.12] — 2026-11-17
+
 ### Added
 
 - **Respaldo a DHCP cuando la IP fija no llega al broker.** Una IP fija equivocada
