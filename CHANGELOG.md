@@ -38,6 +38,14 @@ Rama de trabajo: `main`.
 
   Topics y payloads no cambian.
 
+- **El reloj Ethernet se toma del oscilador de la placa (`ETH_CLOCK_GPIO0_IN`).**
+  `kEthClockMode` era `ETH_CLOCK_GPIO17_OUT`, que no corresponde al cableado del
+  WT32-ETH01: el LAN8720 usa el oscilador externo de 50 MHz y el MAC del ESP32
+  generaba un reloj propio sin sincronía con el PHY (riesgo de pérdida esporádica de
+  paquetes); además GPIO17 es el MOSI de la SD. Probado en banco en un WT32-ETH01:
+  enlace a 100 Mbps, NTP, MQTT TLS, Modbus TCP y SD correctos. Falta la prueba de
+  larga duración y la de OTA. Es el mismo modo que requiere la placa RevB.
+
 ## [DEV.11] — 2026-11-05
 
 ### Fixed

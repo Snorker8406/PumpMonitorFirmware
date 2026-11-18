@@ -72,7 +72,7 @@ por sí solo, antes de que corra `pinMode()`.
 | GPIO12 | Strapping MTDI: HIGH al reset selecciona flash de 1.8 V → brownout, el equipo no arranca. |
 | GPIO15 | Strapping MTDO (pull-up interno) y JTAG TDO. **Sirve como alternativa, pero solo con cableado activo-bajo** (3V3 → resistencia → ánodo; cátodo → GPIO15), que deja el pin alto en el boot. Con cableado activo-alto, la resistencia a GND lo puede leer LOW al reset: se silencia el log de arranque y puede cambiar el modo de boot. |
 | GPIO32 | Eléctricamente perfecto, pero en el firmware legacy era `relay_start` (`legacy/src/PumpMonitorHardware.ino:43`). En un tablero retrofit puede ir al opto de un relé de arranque: un parpadeo de "error" arrancaría la bomba. **No lo uses sin verificar la placa física.** |
-| GPIO17 | Declarado dos veces en `app_config.hpp`: reloj del PHY (`ETH_CLOCK_GPIO17_OUT`) y MOSI de la SD. Hasta resolver esa ambigüedad no es candidato. |
+| GPIO17 | MOSI de la SD. (Hasta el cambio a `ETH_CLOCK_GPIO0_IN` también estaba declarado como reloj del PHY.) |
 
 **Antes de soldar, revisa el tablero.** En el firmware legacy GPIO4 era `TXD2`
 del camino serie RS-485 (`legacy/src/PumpMonitorHardware.ino:40`). El firmware

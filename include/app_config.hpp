@@ -27,7 +27,11 @@ constexpr int kEthPowerPin = 16;
 constexpr int kEthMdcPin = 23;
 constexpr int kEthMdioPin = 18;
 constexpr eth_phy_type_t kEthPhy = ETH_PHY_LAN8720;
-constexpr eth_clock_mode_t kEthClockMode = ETH_CLOCK_GPIO17_OUT;
+// El oscilador de 50 MHz de la placa (habilitado por kEthPowerPin) alimenta al
+// LAN8720 y entra al ESP32 por GPIO0, tanto en el WT32-ETH01 como en la RevB.
+// Con ETH_CLOCK_GPIO17_OUT el MAC usaría un reloj propio, sin sincronía con el
+// PHY, y además GPIO17 es el MOSI de la SD.
+constexpr eth_clock_mode_t kEthClockMode = ETH_CLOCK_GPIO0_IN;
 
 // Opcional: red estática. Pon kUseStaticIp = true y actualiza los valores.
 constexpr bool kUseStaticIp = false;

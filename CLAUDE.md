@@ -15,7 +15,7 @@ Placa **WT32-ETH01**: ESP32 + PHY Ethernet LAN8720 (sin WiFi en uso).
 
 | Periférico | Pines |
 |---|---|
-| Ethernet LAN8720 | PHY addr 1, power 16, MDC 23, MDIO 18, clock `GPIO17_OUT` |
+| Ethernet LAN8720 | PHY addr 1, power 16, MDC 23, MDIO 18, clock `GPIO0_IN` (oscilador externo de 50 MHz) |
 | RTC DS3231 (I²C) | SDA 33, SCL 5 |
 | Tarjeta SD (SPI) | CS 2, MOSI 17, SCK 14, MISO 35 · 4 MHz |
 | LED testigo de estado | GPIO4, activo-alto · `docs/STATUS_LED.md` |
