@@ -219,7 +219,8 @@ constexpr int kRtcSclPin = 5;
 // strapping y cambian el modo de arranque del ESP32.
 //
 // Cableado activo-alto (kStatusLedActiveLow = false):
-//   GPIO4 ──[330 Ω … 1 kΩ]──▶|── GND
+//   GPIO4 ──[220 Ω … 1 kΩ]──▶|── GND
+// La placa RevA monta un LED rojo de 5 mm de inserción con 220 Ω (~6 mA).
 // Para un testigo en la puerta del tablero usa un MOSFET u optoacoplador y
 // alimenta el LED de la fuente del tablero; no cuelgues un cable largo del GPIO.
 constexpr int kStatusLedPin = 4;

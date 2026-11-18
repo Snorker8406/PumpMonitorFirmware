@@ -25,12 +25,18 @@ GPIO4 ──[ R ]──▶|── GND
 El ánodo del LED va hacia GPIO4 y el cátodo a GND; la resistencia en serie, de
 cualquiera de los dos lados. `digitalWrite(HIGH)` enciende.
 
+**Placa RevA** (`hardware/RevA`, proyecto EasyEDA `PumpMonitor_RevA`): `D3` es un
+LED rojo difuso de **5 mm de inserción** (XL-502SURD, LCSC C2895492) con
+`R1` = **220 Ω** en serie (0603, LCSC C22962), lo que da ~6 mA. La altura a la
+que queda el LED sobre la placa se decide al soldarlo, según el case.
+
 El valor de R depende del color, porque solo hay 3.3 V disponibles:
 
 | LED | Vf típica | R | Corriente |
 |---|---|---|---|
+| Rojo / ámbar | ~2.0 V | 220 Ω | ~6 mA (RevA) |
 | Rojo / ámbar | ~2.0 V | 330 Ω | ~4 mA |
-| Rojo / ámbar | ~2.0 V | 1 kΩ | ~1.3 mA |
+| Rojo / ámbar | ~2.0 V | 1 kΩ | ~1.3 mA (prototipo con módulos; se ve poco de día) |
 | Verde / azul / blanco | ~3.0 V | 100 Ω | ~3 mA |
 
 **Usa rojo o ámbar.** Con verde, azul o blanco la Vf casi iguala los 3.3 V: con
