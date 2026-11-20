@@ -5,6 +5,14 @@ Rama de trabajo: `main`.
 
 ## [Unreleased]
 
+### Added
+
+- **Documentación de la placa RevB** (`docs/HARDWARE_REVB.md`): hardware propio sin
+  módulos (ESP32-WROOM-32E, LAN8720A, DS3231, microSD). Asignación de pines, pines de
+  arranque, reloj Ethernet, alimentación, programación por `J3` y qué está verificado
+  sobre el diseño y qué falta probar con la placa. No cambia código: la RevB usa los
+  mismos pines y el mismo binario que el WT32-ETH01.
+
 ## [DEV.12] — 2026-11-17
 
 ### Added

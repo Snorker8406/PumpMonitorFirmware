@@ -23,6 +23,10 @@ Placa **WT32-ETH01**: ESP32 + PHY Ethernet LAN8720 (sin WiFi en uso).
 Todo esto vive en `include/app_config.hpp`. No disperses pines ni constantes por
 el código.
 
+La **placa RevB** (ESP32-WROOM-32E, LAN8720A, DS3231 y microSD soldados, sin
+módulos) usa esta misma asignación de pines y el mismo binario. Antes de mover un
+pin o cambiar el modo de reloj, lee `docs/HARDWARE_REVB.md`.
+
 ---
 
 ## 2. Compilar y cargar

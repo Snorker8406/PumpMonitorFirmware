@@ -30,6 +30,9 @@ LED rojo difuso de **5 mm de inserción** (XL-502SURD, LCSC C2895492) con
 `R1` = **220 Ω** en serie (0603, LCSC C22962), lo que da ~6 mA. La altura a la
 que queda el LED sobre la placa se decide al soldarlo, según el case.
 
+**Placa RevB** (`HARDWARE_REVB.md`): mismo LED y misma resistencia, también en
+GPIO4.
+
 El valor de R depende del color, porque solo hay 3.3 V disponibles:
 
 | LED | Vf típica | R | Corriente |
